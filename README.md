@@ -947,6 +947,10 @@ When reporting issues, please include:
 - **Issues**: Open an issue on GitHub
 - **Discussions**: Use GitHub Discussions for questions and community support
 
+## Acknowledgements
+
+This dashboard builds upon [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI), which provides the core proxy functionality. Development was accelerated with [OpenCode](https://opencode.ai/docs/config/), an AI-powered development tool that streamlines coding workflows.
+
 ---
 
 Built with ❤️ using Next.js, React, and Tailwind CSS
