@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
+import { validateOrigin } from "@/lib/auth/origin";
 
 const PROVIDERS = {
   CLAUDE: "claude",
@@ -61,6 +62,11 @@ export async function POST(request: NextRequest) {
 
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const originError = validateOrigin(request);
+  if (originError) {
+    return originError;
   }
 
   let rawBody: unknown;

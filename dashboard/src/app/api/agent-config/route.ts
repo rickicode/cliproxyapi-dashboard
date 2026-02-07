@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
+import { validateOrigin } from "@/lib/auth/origin";
 import { prisma } from "@/lib/db";
 import {
   buildAvailableModelIds,
@@ -139,6 +140,11 @@ export async function PUT(request: NextRequest) {
     const session = await verifySession();
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const originError = validateOrigin(request);
+    if (originError) {
+      return originError;
     }
 
     const body = await request.json();

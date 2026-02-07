@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
+import { validateOrigin } from "@/lib/auth/origin";
 import { CONTAINER_CONFIG, isValidContainerName } from "@/lib/containers";
 import { execFile } from "child_process";
 import { promisify } from "util";
@@ -27,6 +28,11 @@ export async function POST(
       { error: "Unauthorized" },
       { status: 401 }
     );
+  }
+
+  const originError = validateOrigin(request);
+  if (originError) {
+    return originError;
   }
 
   const { name } = await params;

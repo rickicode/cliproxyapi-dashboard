@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
+import { validateOrigin } from "@/lib/auth/origin";
 import { prisma } from "@/lib/db";
 
 export async function PATCH(
@@ -9,6 +10,11 @@ export async function PATCH(
   const session = await verifySession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const originError = validateOrigin(request);
+  if (originError) {
+    return originError;
   }
 
   const { id } = await params;
@@ -46,12 +52,17 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await verifySession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const originError = validateOrigin(request);
+  if (originError) {
+    return originError;
   }
 
   const { id } = await params;

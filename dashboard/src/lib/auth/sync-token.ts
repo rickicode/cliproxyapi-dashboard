@@ -7,6 +7,42 @@ interface TokenResult {
   hash: string;
 }
 
+interface ValidSyncTokenResult {
+  ok: true;
+  userId: string;
+  syncApiKey: string | null;
+}
+
+interface InvalidSyncTokenResult {
+  ok: false;
+  reason: "unauthorized" | "expired";
+}
+
+type SyncTokenValidationResult = ValidSyncTokenResult | InvalidSyncTokenResult;
+
+const DEFAULT_SYNC_TOKEN_MAX_AGE_DAYS = 90;
+
+function getSyncTokenMaxAgeDays(): number {
+  const envValue = process.env.SYNC_TOKEN_MAX_AGE_DAYS;
+  if (!envValue) return DEFAULT_SYNC_TOKEN_MAX_AGE_DAYS;
+
+  const parsed = parseInt(envValue, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return DEFAULT_SYNC_TOKEN_MAX_AGE_DAYS;
+  }
+
+  return parsed;
+}
+
+function isTokenExpired(createdAt: Date): boolean {
+  const maxAgeDays = getSyncTokenMaxAgeDays();
+  const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const tokenAgeMs = now - createdAt.getTime();
+
+  return tokenAgeMs > maxAgeMs;
+}
+
 export function generateSyncToken(): TokenResult {
   const tokenBuffer = crypto.randomBytes(32);
   const token = tokenBuffer.toString("base64url");
@@ -31,11 +67,11 @@ export function verifySyncToken(token: string, hash: string): boolean {
 
 export async function validateSyncTokenFromHeader(
   request: NextRequest
-): Promise<{ userId: string; syncApiKey: string | null } | null> {
+): Promise<SyncTokenValidationResult> {
   const authHeader = request.headers.get("Authorization");
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return null;
+    return { ok: false, reason: "unauthorized" };
   }
 
   const token = authHeader.slice(7);
@@ -51,11 +87,16 @@ export async function validateSyncTokenFromHeader(
         id: true,
         userId: true,
         syncApiKey: true,
+        createdAt: true,
       },
     });
 
     if (!syncToken) {
-      return null;
+      return { ok: false, reason: "unauthorized" };
+    }
+
+    if (isTokenExpired(syncToken.createdAt)) {
+      return { ok: false, reason: "expired" };
     }
 
     await prisma.syncToken.update({
@@ -63,8 +104,8 @@ export async function validateSyncTokenFromHeader(
       data: { lastUsedAt: new Date() },
     });
 
-    return { userId: syncToken.userId, syncApiKey: syncToken.syncApiKey };
+    return { ok: true, userId: syncToken.userId, syncApiKey: syncToken.syncApiKey };
   } catch {
-    return null;
+    return { ok: false, reason: "unauthorized" };
   }
 }

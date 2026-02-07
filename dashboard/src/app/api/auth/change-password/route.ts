@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
+import { validateOrigin } from "@/lib/auth/origin";
 import { getUser } from "@/lib/auth/dal";
 import { verifyPassword, hashPassword } from "@/lib/auth/password";
 import { prisma } from "@/lib/db";
@@ -11,6 +12,11 @@ export async function POST(request: NextRequest) {
 
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const originError = validateOrigin(request);
+    if (originError) {
+      return originError;
     }
 
     const body = await request.json();

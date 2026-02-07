@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
+import { validateOrigin } from "@/lib/auth/origin";
 import { execFile } from "child_process";
 import { promisify } from "util";
 
@@ -15,6 +16,11 @@ export async function POST(request: NextRequest) {
       { error: "Unauthorized" },
       { status: 401 }
     );
+  }
+
+  const originError = validateOrigin(request);
+  if (originError) {
+    return originError;
   }
 
   try {
