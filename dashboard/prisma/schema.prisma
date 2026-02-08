@@ -132,6 +132,7 @@ model ProviderKeyOwnership {
 
   @@index([userId])
   @@index([provider])
+  @@index([provider, keyHash])
   @@map("provider_key_ownerships")
 }
 
