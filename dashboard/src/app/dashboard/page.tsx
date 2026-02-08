@@ -8,7 +8,8 @@ import { verifySession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import type { OhMyOpenCodeFullConfig } from "@/lib/config-generators/oh-my-opencode-types";
 import { fetchProxyModels } from "@/lib/config-generators/shared";
-import { getProxyUrl, buildAvailableModelsFromProxy } from "@/lib/config-generators/opencode";
+import { getProxyUrl, buildAvailableModelsFromProxy, extractOAuthModelAliases } from "@/lib/config-generators/opencode";
+import type { ConfigData } from "@/lib/config-generators/shared";
 
 interface ManagementFetchParams {
   path: string;
@@ -174,9 +175,14 @@ export default async function QuickStartPage() {
 
   const apiKeyForProxy = userApiKeys.length > 0 ? userApiKeys[0].key : "";
   const proxyModels = apiKeyForProxy ? await fetchProxyModels(getProxyUrl(), apiKeyForProxy) : [];
-  const availableModelIds = proxyModels.map((m) => m.id);
+  const oauthAliasModels = extractOAuthModelAliases(config as ConfigData | null, oauthAccounts);
+  const oauthAliasIds = Object.keys(oauthAliasModels);
+  const availableModelIds = [...proxyModels.map((m) => m.id), ...oauthAliasIds];
   const modelSourceMap = buildSourceMap(proxyModels);
-  const allProxyModels = buildAvailableModelsFromProxy(proxyModels);
+  for (const aliasId of oauthAliasIds) {
+    modelSourceMap.set(aliasId, "OAuth Alias");
+  }
+  const allProxyModels = { ...buildAvailableModelsFromProxy(proxyModels), ...oauthAliasModels };
 
    return (
      <div className="space-y-5">

@@ -2,78 +2,150 @@ import type { OhMyOpenCodeFullConfig } from "./oh-my-opencode-types";
 
 export type { OAuthAccount, ConfigData } from "./shared";
 
-export const TIER_1 = [
-  "claude-opus-4-6",
-  "claude-opus-4-5-20251101",
-  "gemini-claude-opus-4-5-thinking",
-  "gpt-5.3-codex",
-  "gpt-5.2-codex",
-  "gpt-5.1-codex",
-  "gemini-claude-sonnet-4-5-thinking",
-  "gemini-claude-sonnet-4-5",
-  "claude-sonnet-4-5-20250929",
-  "gemini-3-pro-preview",
-] as const;
+// ---------------------------------------------------------------------------
+// Dynamic model scoring & tier building
+// ---------------------------------------------------------------------------
+// Instead of hardcoding model IDs, we score each model from the proxy based
+// on patterns in the ID and sort them into quality tiers dynamically.
+// This ensures new models added to the proxy are automatically ranked.
+// ---------------------------------------------------------------------------
 
-export const TIER_2 = [
-  "gemini-claude-sonnet-4-5-thinking",
-  "gemini-claude-sonnet-4-5",
-  "claude-sonnet-4-5-20250929",
-  "gpt-5.2",
-  "gpt-5.1",
-  "gpt-5-codex",
-  "gemini-3-pro-preview",
-  "gemini-claude-opus-4-5-thinking",
-  "claude-opus-4-20250514",
-] as const;
+/** Higher score = better/more capable model. */
+function scoreModel(id: string): number {
+  let score = 0;
 
-export const TIER_3 = [
-  "claude-haiku-4-5-20251001",
-  "gemini-3-flash-preview",
-  "gemini-2.5-flash",
-  "gpt-5-codex-mini",
-  "gpt-5",
-  "gemini-claude-sonnet-4-5",
-] as const;
+  // --- Family bonus (base capability) ---
+  if (id.includes("opus"))        score += 1000;
+  else if (id.includes("sonnet")) score += 600;
+  else if (id.includes("haiku"))  score += 200;
+  else if (id.includes("pro"))    score += 500;
+  else if (id.includes("flash"))  score += 250;
 
-export const TIER_4 = [
-  "gemini-3-pro-preview",
-  "gemini-3-pro-image-preview",
-  "gemini-claude-sonnet-4-5",
-  "claude-sonnet-4-5-20250929",
-  "claude-opus-4-20250514",
-] as const;
+  // --- Codex bonus (reasoning-enhanced) ---
+  if (id.includes("codex-max"))       score += 400;
+  else if (id.includes("codex-mini")) score += 50;
+  else if (id.includes("codex"))      score += 300;
 
-export function pickBestModel(availableModels: string[], tierPriority: readonly string[]): string | null {
-  for (const pattern of tierPriority) {
-    const match = availableModels.find((m) => m.startsWith(pattern));
-    if (match) return match;
+  // --- Thinking bonus ---
+  if (id.includes("thinking")) score += 150;
+
+  // --- GPT version parsing (gpt-5, gpt-5.1, gpt-5.2, gpt-5.3) ---
+  const gptMatch = id.match(/gpt-(\d+(?:\.\d+)?)/);
+  if (gptMatch) {
+    const ver = parseFloat(gptMatch[1]);
+    score += ver * 80; // gpt-5 = 400, gpt-5.1 = 408, gpt-5.2 = 416, gpt-5.3 = 424
   }
-  return null;
+
+  // --- Gemini version parsing (gemini-2.5, gemini-3) ---
+  const geminiMatch = id.match(/gemini-(\d+(?:\.\d+)?)/);
+  if (geminiMatch) {
+    const ver = parseFloat(geminiMatch[1]);
+    score += ver * 60; // gemini-2.5 = 150, gemini-3 = 180
+  }
+
+  // --- Claude version bonus (higher opus/sonnet version = better) ---
+  // claude-opus-4-6 > claude-opus-4-5 > claude-opus-4
+  const claudeVerMatch = id.match(/claude-(?:opus|sonnet|haiku)-(\d+)-?(\d+)?/);
+  if (claudeVerMatch) {
+    const major = parseInt(claudeVerMatch[1], 10);
+    const minor = claudeVerMatch[2] ? parseInt(claudeVerMatch[2], 10) : 0;
+    score += major * 20 + minor * 2;
+  }
+
+  // --- Image model bonus (for visual-engineering tier) ---
+  if (id.includes("image")) score += 10;
+
+  // --- Gemini-Claude hybrid bonus (cross-provider, often very capable) ---
+  if (id.startsWith("gemini-claude")) score += 50;
+
+  return score;
 }
 
-export const AGENT_ROLES = {
-  sisyphus: { tier: TIER_1, label: "Orchestrator" },
-  atlas: { tier: TIER_1, label: "Master orchestrator" },
-  prometheus: { tier: TIER_1, label: "Planner" },
-  metis: { tier: TIER_2, label: "Plan consultant" },
-  oracle: { tier: TIER_1, label: "Technical advisor" },
-  librarian: { tier: TIER_2, label: "Research" },
-  explore: { tier: TIER_3, label: "Fast exploration" },
-  "multimodal-looker": { tier: TIER_2, label: "Vision" },
-  momus: { tier: TIER_2, label: "Reviewer" },
-} as const;
+/** Sort models by score descending. */
+function rankModels(modelIds: string[]): string[] {
+  return [...modelIds].sort((a, b) => scoreModel(b) - scoreModel(a));
+}
 
-export const CATEGORY_ROLES = {
-  "visual-engineering": { tier: TIER_4, label: "UI work" },
-  ultrabrain: { tier: TIER_1, label: "Hard logic" },
-  deep: { tier: TIER_1, label: "Deep problem solving" },
-  artistry: { tier: TIER_4, label: "Creative work" },
-  quick: { tier: TIER_3, label: "Trivial tasks" },
-  "unspecified-low": { tier: TIER_2, label: "Low effort general" },
-  "unspecified-high": { tier: TIER_1, label: "High effort general" },
-  writing: { tier: TIER_3, label: "Documentation" },
-} as const;
+export interface DynamicTiers {
+  tier1: string[]; // Top: orchestrators, planners, hard logic
+  tier2: string[]; // Mid: consultants, reviewers, research
+  tier3: string[]; // Fast/cheap: exploration, quick tasks, writing
+  tier4: string[]; // Visual/creative: pro + image models first, then mid-tier
+}
+
+/**
+ * Build 4 dynamic tiers from the available proxy models.
+ *
+ * Tier 1: Top third by score (best models for orchestrators, hard logic)
+ * Tier 2: Top two-thirds by score (good models for mid-level agents)
+ * Tier 3: Cheap/fast models first, then rest ascending by score
+ * Tier 4: Visual/creative (pro + image) models first, then mid-tier fallback
+ */
+export function buildTiers(availableModels: string[]): DynamicTiers {
+  if (availableModels.length === 0) {
+    return { tier1: [], tier2: [], tier3: [], tier4: [] };
+  }
+
+  const ranked = rankModels(availableModels);
+
+  // Tier 1: top third
+  const t1Count = Math.max(1, Math.ceil(ranked.length / 3));
+  const tier1 = ranked.slice(0, t1Count);
+
+  // Tier 2: top two-thirds
+  const t2Count = Math.max(1, Math.ceil((ranked.length * 2) / 3));
+  const tier2 = ranked.slice(0, t2Count);
+
+  // Tier 3: fast/cheap models first, then everything sorted by score ascending
+  const cheapPatterns = ["haiku", "flash", "mini", "lite", "nano"];
+  const isCheap = (id: string) => cheapPatterns.some((p) => id.includes(p));
+  const cheapModels = ranked.filter((id) => isCheap(id));
+  const nonCheapByScoreAsc = ranked.filter((id) => !isCheap(id)).reverse();
+  const tier3 = [...cheapModels, ...nonCheapByScoreAsc];
+
+  // Tier 4: visual/creative — pro & image models first, then mid-tier fallback
+  const visualPatterns = ["pro", "image"];
+  const isVisual = (id: string) => visualPatterns.some((p) => id.includes(p));
+  const visualModels = ranked.filter((id) => isVisual(id));
+  const nonVisual = ranked.filter((id) => !isVisual(id));
+  const tier4 = [...visualModels, ...nonVisual];
+
+  return { tier1, tier2, tier3, tier4 };
+}
+
+export type TierLevel = 1 | 2 | 3 | 4;
+
+export function pickBestModel(availableModels: string[], tierLevel: TierLevel): string | null {
+  const tiers = buildTiers(availableModels);
+  const tierList = tierLevel === 1 ? tiers.tier1
+    : tierLevel === 2 ? tiers.tier2
+    : tierLevel === 3 ? tiers.tier3
+    : tiers.tier4;
+  return tierList[0] ?? null;
+}
+
+export const AGENT_ROLES: Record<string, { tier: TierLevel; label: string }> = {
+  sisyphus: { tier: 1, label: "Orchestrator" },
+  atlas: { tier: 1, label: "Master orchestrator" },
+  prometheus: { tier: 1, label: "Planner" },
+  metis: { tier: 2, label: "Plan consultant" },
+  oracle: { tier: 1, label: "Technical advisor" },
+  librarian: { tier: 2, label: "Research" },
+  explore: { tier: 3, label: "Fast exploration" },
+  "multimodal-looker": { tier: 2, label: "Vision" },
+  momus: { tier: 2, label: "Reviewer" },
+};
+
+export const CATEGORY_ROLES: Record<string, { tier: TierLevel; label: string }> = {
+  "visual-engineering": { tier: 4, label: "UI work" },
+  ultrabrain: { tier: 1, label: "Hard logic" },
+  deep: { tier: 1, label: "Deep problem solving" },
+  artistry: { tier: 4, label: "Creative work" },
+  quick: { tier: 3, label: "Trivial tasks" },
+  "unspecified-low": { tier: 2, label: "Low effort general" },
+  "unspecified-high": { tier: 1, label: "High effort general" },
+  writing: { tier: 3, label: "Documentation" },
+};
 
 interface ModelAssignment {
   model: string;

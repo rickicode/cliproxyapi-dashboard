@@ -7,8 +7,9 @@ import {
   AGENT_ROLES,
   CATEGORY_ROLES,
 } from "@/lib/config-generators/oh-my-opencode";
-import { getProxyUrl } from "@/lib/config-generators/opencode";
+import { getProxyUrl, extractOAuthModelAliases } from "@/lib/config-generators/opencode";
 import { fetchProxyModels } from "@/lib/config-generators/shared";
+import type { ConfigData } from "@/lib/config-generators/shared";
 import type { OhMyOpenCodeFullConfig } from "@/lib/config-generators/oh-my-opencode-types";
 import { validateFullConfig } from "@/lib/config-generators/oh-my-opencode-types";
 
@@ -99,7 +100,9 @@ export async function GET() {
     });
     const apiKeyForProxy = userApiKeys[0]?.key || "";
     const proxyModels = apiKeyForProxy ? await fetchProxyModels(getProxyUrl(), apiKeyForProxy) : [];
-    const allModelIds = proxyModels.map((m: { id: string }) => m.id);
+    const oauthAccounts = extractOAuthAccounts(authFilesData);
+    const oauthAliasIds = Object.keys(extractOAuthModelAliases(managementConfig as ConfigData | null, oauthAccounts));
+    const allModelIds = [...proxyModels.map((m: { id: string }) => m.id), ...oauthAliasIds];
     const availableModels = allModelIds.filter((id: string) => !excludedModels.has(id));
 
     const defaults = computeDefaults(availableModels);
