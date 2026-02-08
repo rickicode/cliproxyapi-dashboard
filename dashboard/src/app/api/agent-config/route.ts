@@ -3,13 +3,12 @@ import { verifySession } from "@/lib/auth/session";
 import { validateOrigin } from "@/lib/auth/origin";
 import { prisma } from "@/lib/db";
 import {
-  buildAvailableModelIds,
   pickBestModel,
-  enrichTierForRole,
   AGENT_ROLES,
   CATEGORY_ROLES,
 } from "@/lib/config-generators/oh-my-opencode";
-import type { ConfigData, OAuthAccount, ModelsDevData } from "@/lib/config-generators/shared";
+import { getProxyUrl } from "@/lib/config-generators/opencode";
+import { fetchProxyModels } from "@/lib/config-generators/shared";
 import type { OhMyOpenCodeFullConfig } from "@/lib/config-generators/oh-my-opencode-types";
 import { validateFullConfig } from "@/lib/config-generators/oh-my-opencode-types";
 
@@ -31,23 +30,7 @@ async function fetchManagementJson(path: string) {
   }
 }
 
-async function fetchModelsDevData(): Promise<ModelsDevData | null> {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch("https://models.dev/api.json", {
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
-function extractOAuthAccounts(data: unknown): OAuthAccount[] {
+function extractOAuthAccounts(data: unknown): { id: string; name: string; type?: string; provider?: string; disabled?: boolean }[] {
   if (typeof data !== "object" || data === null) return [];
   const record = data as Record<string, unknown>;
   const files = record["files"];
@@ -67,13 +50,11 @@ function extractOAuthAccounts(data: unknown): OAuthAccount[] {
 }
 
 function computeDefaults(
-  availableModels: string[],
-  modelsDevData: ModelsDevData | null
+  availableModels: string[]
 ): { agents: Record<string, string>; categories: Record<string, string> } {
   const agents: Record<string, string> = {};
   for (const [agent, role] of Object.entries(AGENT_ROLES)) {
-    const enrichedTier = enrichTierForRole(role.tier, modelsDevData);
-    const model = pickBestModel(availableModels, enrichedTier);
+    const model = pickBestModel(availableModels, role.tier);
     if (model) {
       agents[agent] = model;
     }
@@ -81,8 +62,7 @@ function computeDefaults(
 
   const categories: Record<string, string> = {};
   for (const [category, role] of Object.entries(CATEGORY_ROLES)) {
-    const enrichedTier = enrichTierForRole(role.tier, modelsDevData);
-    const model = pickBestModel(availableModels, enrichedTier);
+    const model = pickBestModel(availableModels, role.tier);
     if (model) {
       categories[category] = model;
     }
@@ -98,30 +78,31 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const [agentOverride, managementConfig, authFilesData, modelsDevData, modelPreference] =
+    const [agentOverride, managementConfig, authFilesData, modelPreference] =
       await Promise.all([
         prisma.agentModelOverride.findUnique({
           where: { userId: session.userId },
         }),
         fetchManagementJson("config"),
         fetchManagementJson("auth-files"),
-        fetchModelsDevData(),
         prisma.modelPreference.findUnique({
           where: { userId: session.userId },
         }),
       ]);
 
-    const oauthAccounts = extractOAuthAccounts(authFilesData);
     const excludedModels = new Set(modelPreference?.excludedModels || []);
 
-    const allModelIds = buildAvailableModelIds(
-      managementConfig as ConfigData | null,
-      oauthAccounts,
-      modelsDevData
-    );
-    const availableModels = allModelIds.filter((id) => !excludedModels.has(id));
+    const userApiKeys = await prisma.userApiKey.findMany({
+      where: { userId: session.userId },
+      select: { key: true },
+      take: 1,
+    });
+    const apiKeyForProxy = userApiKeys[0]?.key || "";
+    const proxyModels = apiKeyForProxy ? await fetchProxyModels(getProxyUrl(), apiKeyForProxy) : [];
+    const allModelIds = proxyModels.map((m: { id: string }) => m.id);
+    const availableModels = allModelIds.filter((id: string) => !excludedModels.has(id));
 
-    const defaults = computeDefaults(availableModels, modelsDevData);
+    const defaults = computeDefaults(availableModels);
     const overrides = agentOverride?.overrides ? validateFullConfig(agentOverride.overrides) : {} as OhMyOpenCodeFullConfig;
 
     return NextResponse.json({

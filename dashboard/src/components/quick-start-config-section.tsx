@@ -15,24 +15,6 @@ interface OAuthAccountEntry {
   disabled?: boolean;
 }
 
-interface ModelsDevModel {
-  id: string;
-  name: string;
-  family?: string;
-  reasoning?: boolean;
-  tool_call?: boolean;
-  attachment?: boolean;
-  modalities?: { input?: string[]; output?: string[] };
-  cost?: { input?: number; output?: number };
-  limit?: { context?: number; output?: number };
-}
-
-interface ModelsDevProvider {
-  models: Record<string, ModelsDevModel>;
-}
-
-type ModelsDevData = Record<string, ModelsDevProvider>;
-
 interface ConfigData {
   "gemini-api-key"?: unknown;
   "claude-api-key"?: unknown;
@@ -41,12 +23,22 @@ interface ConfigData {
   "oauth-model-alias"?: unknown;
 }
 
+interface ModelDefinitionLike {
+  name: string;
+  context: number;
+  output: number;
+  attachment: boolean;
+  reasoning: boolean;
+  modalities: { input: string[]; output: string[] };
+  options?: Record<string, unknown>;
+}
+
 interface QuickStartConfigSectionProps {
    apiKeys: { key: string; name: string | null }[];
    config: unknown;
    oauthAccounts: OAuthAccountEntry[];
-   modelsDevData: unknown;
    availableModels: string[];
+   allModels: Record<string, ModelDefinitionLike>;
    modelSourceMap: Map<string, string>;
    initialExcludedModels: string[];
    agentOverrides?: OhMyOpenCodeFullConfig;
@@ -59,8 +51,8 @@ export function QuickStartConfigSection({
    apiKeys,
    config,
    oauthAccounts,
-   modelsDevData,
    availableModels,
+   allModels,
    modelSourceMap,
    initialExcludedModels,
    agentOverrides,
@@ -105,10 +97,10 @@ export function QuickStartConfigSection({
                apiKeys={apiKeys}
                config={config as ConfigData | null}
                oauthAccounts={oauthAccounts}
-               modelsDevData={modelsDevData as ModelsDevData | null}
+               models={allModels as Record<string, import("@/lib/config-generators/opencode").ModelDefinition>}
                excludedModels={excludedModels}
                proxyUrl={proxyUrl}
-             />
+              />
 
             <div className="space-y-1.5 text-sm text-white/70">
               <p className="flex items-start gap-2">
@@ -145,7 +137,7 @@ export function QuickStartConfigSection({
             apiKeys={apiKeys}
             config={config as ConfigData | null}
             oauthAccounts={oauthAccounts}
-            modelsDevData={modelsDevData as ModelsDevData | null}
+            proxyModelIds={availableModels}
             excludedModels={excludedModels}
             agentOverrides={agentOverrides}
           />

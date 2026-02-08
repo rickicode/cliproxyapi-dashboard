@@ -7,15 +7,9 @@ import { useToast } from "@/components/ui/toast";
 import {
   type OAuthAccount,
   type ConfigData,
-  type ModelsDevData,
-  type ModelMeta,
   AGENT_ROLES,
   CATEGORY_ROLES,
-  buildAvailableModelIds,
   buildOhMyOpenCodeConfig,
-  enrichTierForRole,
-  formatContextWindow,
-  getModelMeta,
   pickBestModel,
 } from "@/lib/config-generators/oh-my-opencode";
 import {
@@ -40,7 +34,7 @@ interface OhMyOpenCodeConfigGeneratorProps {
   apiKeys: { key: string; name: string | null }[];
   config: ConfigData | null;
   oauthAccounts: OAuthAccount[];
-  modelsDevData: ModelsDevData | null;
+  proxyModelIds?: string[];
   excludedModels?: string[];
   agentOverrides?: OhMyOpenCodeFullConfig;
 }
@@ -68,20 +62,16 @@ interface ExtraFieldConfig {
 function ModelBadge({
   name,
   model,
-  meta,
   isOverride,
   availableModels,
-  modelsDevData,
   onSelect,
   extraFields,
   onFieldChange,
 }: {
   name: string;
   model: string;
-  meta: ModelMeta | null;
   isOverride: boolean;
   availableModels: string[];
-  modelsDevData: ModelsDevData | null;
   onSelect: (value: string | undefined) => void;
   extraFields?: ExtraFieldConfig;
   onFieldChange?: (field: string, value: string | number | undefined) => void;
@@ -145,16 +135,6 @@ function ModelBadge({
           <span className="text-pink-300">{name}</span>
           <span className="text-white/30">&rarr;</span>
           <span>{model}</span>
-          {meta?.reasoning && (
-            <span className="px-1 py-0.5 rounded bg-violet-500/15 text-violet-300/80 text-[10px] leading-none font-sans font-medium">
-              reasoning
-            </span>
-          )}
-          {meta?.context && (
-            <span className="text-white/30 text-[10px] font-sans">
-              {formatContextWindow(meta.context)}
-            </span>
-          )}
           {hasExtraValues && (
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400/80" />
           )}
@@ -234,7 +214,6 @@ function ModelBadge({
               Auto (default)
             </button>
             {filtered.map((m) => {
-              const mMeta = getModelMeta(m, modelsDevData);
               return (
                 <button
                   key={m}
@@ -245,16 +224,6 @@ function ModelBadge({
                   }`}
                 >
                   <span className="flex-1">{m}</span>
-                  {mMeta?.reasoning && (
-                    <span className="px-1 py-0.5 rounded bg-violet-500/15 text-violet-300/80 text-[9px] leading-none font-sans shrink-0">
-                      reasoning
-                    </span>
-                  )}
-                  {mMeta?.context && (
-                    <span className="text-white/30 text-[9px] font-sans shrink-0">
-                      {formatContextWindow(mMeta.context)}
-                    </span>
-                  )}
                 </button>
               );
             })}
@@ -272,7 +241,7 @@ export function OhMyOpenCodeConfigGenerator({
    apiKeys,
    config,
    oauthAccounts,
-   modelsDevData,
+   proxyModelIds,
    excludedModels,
    agentOverrides: initialOverrides,
  }: OhMyOpenCodeConfigGeneratorProps) {
@@ -300,13 +269,13 @@ export function OhMyOpenCodeConfigGenerator({
    const [modelConcurrencyRows, setModelConcurrencyRows] = useState<Array<{ key: string; value: number }>>([]);
    const tmuxDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
-   const allModelIds = buildAvailableModelIds(config, oauthAccounts, modelsDevData);
+   const allModelIds = proxyModelIds ?? [];
    const availableModelIds = excludedModels
-     ? allModelIds.filter((id) => !excludedModels.includes(id))
+     ? allModelIds.filter((id: string) => !excludedModels.includes(id))
      : allModelIds;
   const hasModels = availableModelIds.length > 0;
 
-  const ohMyConfig = hasModels ? buildOhMyOpenCodeConfig(availableModelIds, modelsDevData, overrides) : null;
+  const ohMyConfig = hasModels ? buildOhMyOpenCodeConfig(availableModelIds, overrides) : null;
   const configJson = ohMyConfig ? JSON.stringify(ohMyConfig, null, 2) : "";
 
    useEffect(() => {
@@ -698,32 +667,30 @@ export function OhMyOpenCodeConfigGenerator({
     );
   }
 
-  const agentAssignments: { name: string; model: string; meta: ModelMeta | null; isOverride: boolean; config: AgentConfigEntry }[] = [];
+  const agentAssignments: { name: string; model: string; isOverride: boolean; config: AgentConfigEntry }[] = [];
   for (const [agent, role] of Object.entries(AGENT_ROLES)) {
     const agentConfig = overrides?.agents?.[agent] ?? {};
     const overrideModel = agentConfig.model;
     if (overrideModel && availableModelIds.includes(overrideModel)) {
-      agentAssignments.push({ name: agent, model: overrideModel, meta: getModelMeta(overrideModel, modelsDevData), isOverride: true, config: agentConfig });
+      agentAssignments.push({ name: agent, model: overrideModel, isOverride: true, config: agentConfig });
     } else {
-      const enrichedTier = enrichTierForRole(role.tier, modelsDevData);
-      const model = pickBestModel(availableModelIds, enrichedTier);
+      const model = pickBestModel(availableModelIds, role.tier);
       if (model) {
-        agentAssignments.push({ name: agent, model, meta: getModelMeta(model, modelsDevData), isOverride: !!overrideModel, config: agentConfig });
+        agentAssignments.push({ name: agent, model, isOverride: !!overrideModel, config: agentConfig });
       }
     }
   }
 
-  const categoryAssignments: { name: string; model: string; meta: ModelMeta | null; isOverride: boolean; config: CategoryConfigEntry }[] = [];
+  const categoryAssignments: { name: string; model: string; isOverride: boolean; config: CategoryConfigEntry }[] = [];
   for (const [category, role] of Object.entries(CATEGORY_ROLES)) {
     const categoryConfig = overrides?.categories?.[category] ?? {};
     const overrideModel = categoryConfig.model;
     if (overrideModel && availableModelIds.includes(overrideModel)) {
-      categoryAssignments.push({ name: category, model: overrideModel, meta: getModelMeta(overrideModel, modelsDevData), isOverride: true, config: categoryConfig });
+      categoryAssignments.push({ name: category, model: overrideModel, isOverride: true, config: categoryConfig });
     } else {
-      const enrichedTier = enrichTierForRole(role.tier, modelsDevData);
-      const model = pickBestModel(availableModelIds, enrichedTier);
+      const model = pickBestModel(availableModelIds, role.tier);
       if (model) {
-        categoryAssignments.push({ name: category, model, meta: getModelMeta(model, modelsDevData), isOverride: !!overrideModel, config: categoryConfig });
+        categoryAssignments.push({ name: category, model, isOverride: !!overrideModel, config: categoryConfig });
       }
     }
   }
@@ -741,16 +708,14 @@ export function OhMyOpenCodeConfigGenerator({
              Agent Assignments
            </p>
            <div className="flex flex-wrap gap-1.5">
-             {agentAssignments.map(({ name, model, meta, isOverride, config }) => (
-               <ModelBadge
-                 key={name}
-                 name={name}
-                 model={model}
-                 meta={meta}
-                 isOverride={isOverride}
-                 availableModels={availableModelIds}
-                 modelsDevData={modelsDevData}
-                 onSelect={(value) => handleAgentModelChange(name, value)}
+              {agentAssignments.map(({ name, model, isOverride, config }) => (
+                <ModelBadge
+                  key={name}
+                  name={name}
+                  model={model}
+                  isOverride={isOverride}
+                  availableModels={availableModelIds}
+                  onSelect={(value) => handleAgentModelChange(name, value)}
                  extraFields={{
                    variant: config.variant,
                    temperature: config.temperature,
@@ -771,15 +736,13 @@ export function OhMyOpenCodeConfigGenerator({
               Category Assignments
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {categoryAssignments.map(({ name, model, meta, isOverride, config }) => (
+              {categoryAssignments.map(({ name, model, isOverride, config }) => (
                 <ModelBadge
                   key={name}
                   name={name}
                   model={model}
-                  meta={meta}
                   isOverride={isOverride}
                   availableModels={availableModelIds}
-                  modelsDevData={modelsDevData}
                   onSelect={(value) => handleCategoryModelChange(name, value)}
                   extraFields={{
                     variant: config.variant,

@@ -21,44 +21,11 @@ export interface ConfigData {
   "oauth-model-alias"?: unknown;
 }
 
-export interface ModelsDevModelModalities {
-  input?: string[];
-  output?: string[];
-}
-
-export interface ModelsDevModelCost {
-  input?: number;
-  output?: number;
-}
-
-export interface ModelsDevModelLimit {
-  context?: number;
-  output?: number;
-}
-
-export interface ModelsDevModel {
-  id: string;
-  name: string;
-  family?: string;
-  reasoning?: boolean;
-  tool_call?: boolean;
-  attachment?: boolean;
-  modalities?: ModelsDevModelModalities;
-  cost?: ModelsDevModelCost;
-  limit?: ModelsDevModelLimit;
-}
-
-export interface ModelsDevProvider {
-  models: Record<string, ModelsDevModel>;
-}
-
-export type ModelsDevData = Record<string, ModelsDevProvider>;
-
-export const OAUTH_PROVIDER_MAP: Record<string, { providerKey: string; modelsDevKey: string }> = {
-  claude: { providerKey: "claude-api-key", modelsDevKey: "anthropic" },
-  "gemini-cli": { providerKey: "gemini-api-key", modelsDevKey: "google" },
-  antigravity: { providerKey: "gemini-api-key", modelsDevKey: "google" },
-  codex: { providerKey: "codex-api-key", modelsDevKey: "openai" },
+export const OAUTH_PROVIDER_MAP: Record<string, { providerKey: string }> = {
+  claude: { providerKey: "claude-api-key" },
+  "gemini-cli": { providerKey: "gemini-api-key" },
+  antigravity: { providerKey: "gemini-api-key" },
+  codex: { providerKey: "codex-api-key" },
 };
 
 export function getActiveOAuthProviderTypes(oauthAccounts: OAuthAccount[]): Set<string> {
@@ -80,4 +47,34 @@ export function hasProvider(config: ConfigData | null, key: string): boolean {
   const value = config[key as keyof ConfigData];
   if (Array.isArray(value)) return value.length > 0;
   return Boolean(value);
+}
+
+export interface ProxyModel {
+  id: string;
+  owned_by: string;
+}
+
+export async function fetchProxyModels(proxyUrl: string, apiKey: string): Promise<ProxyModel[]> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const res = await fetch(`${proxyUrl}/v1/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!data?.data || !Array.isArray(data.data)) return [];
+    return data.data.filter(
+      (m: unknown): m is ProxyModel =>
+        isRecord(m) && typeof m.id === "string" && typeof m.owned_by === "string"
+    );
+  } catch {
+    return [];
+  }
 }

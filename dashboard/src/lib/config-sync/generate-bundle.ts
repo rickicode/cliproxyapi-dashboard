@@ -1,9 +1,10 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
-import { buildAvailableModels, getProxyUrl, type McpEntry } from "@/lib/config-generators/opencode";
-import { buildAvailableModelIds, buildOhMyOpenCodeConfig } from "@/lib/config-generators/oh-my-opencode";
+import { buildAvailableModelsFromProxy, extractOAuthModelAliases, getProxyUrl, type McpEntry, type ModelDefinition } from "@/lib/config-generators/opencode";
+import { buildOhMyOpenCodeConfig } from "@/lib/config-generators/oh-my-opencode";
+import { fetchProxyModels } from "@/lib/config-generators/shared";
 import { validateFullConfig, type OhMyOpenCodeFullConfig } from "@/lib/config-generators/oh-my-opencode-types";
-import type { ConfigData, OAuthAccount, ModelsDevData } from "@/lib/config-generators/shared";
+import type { ConfigData, OAuthAccount } from "@/lib/config-generators/shared";
 
 interface ManagementFetchParams {
   path: string;
@@ -71,25 +72,6 @@ async function fetchManagementJson({ path }: ManagementFetchParams) {
   }
 }
 
-async function fetchModelsDevData() {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    const res = await fetch("https://models.dev/api.json", {
-      cache: "no-store",
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
 function extractApiKeyStrings(data: unknown): string[] {
   if (typeof data !== "object" || data === null) return [];
   const record = data as Record<string, unknown>;
@@ -132,10 +114,7 @@ export async function generateConfigBundle(userId: string, syncApiKey?: string |
   const authFilesData = await fetchManagementJson({ path: "auth-files" });
   const oauthAccounts = extractOAuthAccounts(authFilesData);
 
-  // 3. Fetch models.dev data
-  const modelsDevData: ModelsDevData | null = await fetchModelsDevData();
-
-  // 4. Fetch api-keys from management API
+  // 3. Fetch api-keys from management API
   const apiKeysData = await fetchManagementJson({ path: "api-keys" });
   const apiKeyStrings = extractApiKeyStrings(apiKeysData);
 
@@ -217,19 +196,7 @@ export async function generateConfigBundle(userId: string, syncApiKey?: string |
     agentOverrides = subscriberOverrides;
   }
 
-  // 13. Extract excluded models from effective config
   const excludedModels = new Set(effectiveExcludedModels);
-
-  // 7. Build available models and filter out excluded
-  const allModels = buildAvailableModels(
-    managementConfig as ConfigData | null,
-    oauthAccounts,
-    modelsDevData
-  );
-
-  const filteredModels = Object.fromEntries(
-    Object.entries(allModels).filter(([modelId]) => !excludedModels.has(modelId))
-  );
 
   let resolvedSyncApiKey: string | null = null;
   if (syncApiKey) {
@@ -242,7 +209,19 @@ export async function generateConfigBundle(userId: string, syncApiKey?: string |
 
   const apiKey = resolvedSyncApiKey || userApiKey?.key || (apiKeyStrings.length > 0 ? apiKeyStrings[0] : "no-api-key-create-one-in-dashboard");
 
-  // 9. Build opencode config object (replicate generateConfigJson but return object)
+  const proxyUrl = getProxyUrl();
+  const proxyModels = apiKey !== "no-api-key-create-one-in-dashboard"
+    ? await fetchProxyModels(proxyUrl, apiKey)
+    : [];
+  const allModels: Record<string, ModelDefinition> = {
+    ...buildAvailableModelsFromProxy(proxyModels),
+    ...extractOAuthModelAliases(managementConfig as ConfigData | null, oauthAccounts),
+  };
+
+  const filteredModels = Object.fromEntries(
+    Object.entries(allModels).filter(([modelId]) => !excludedModels.has(modelId))
+  );
+
   const modelEntries: Record<string, Record<string, unknown>> = {};
   for (const [id, def] of Object.entries(filteredModels)) {
     const entry: Record<string, unknown> = {
@@ -277,7 +256,7 @@ export async function generateConfigBundle(userId: string, syncApiKey?: string |
         npm: "@ai-sdk/openai-compatible",
         name: "CLIProxyAPI",
         options: {
-          baseURL: `${getProxyUrl()}/v1`,
+          baseURL: `${proxyUrl}/v1`,
           apiKey,
         },
         models: modelEntries,
@@ -304,18 +283,9 @@ export async function generateConfigBundle(userId: string, syncApiKey?: string |
     opencodeConfig.mcp = mcpServers;
   }
 
-  // 10. Build oh-my-opencode config
-  const availableModelIds = buildAvailableModelIds(
-    managementConfig as ConfigData | null,
-    oauthAccounts,
-    modelsDevData
-  );
-  const filteredModelIds = availableModelIds.filter(
-    (modelId) => !excludedModels.has(modelId)
-  );
+  const filteredModelIds = Object.keys(filteredModels);
   const ohMyOpencodeConfig = buildOhMyOpenCodeConfig(
     filteredModelIds,
-    modelsDevData,
     agentOverrides
   );
 

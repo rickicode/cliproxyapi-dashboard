@@ -6,9 +6,8 @@ import { Button } from "@/components/ui/button";
 import {
   type OAuthAccount,
   type ConfigData,
-  type ModelsDevData,
   type McpEntry,
-  buildAvailableModels,
+  type ModelDefinition,
   generateConfigJson,
 } from "@/lib/config-generators/opencode";
 
@@ -21,7 +20,7 @@ interface OpenCodeConfigGeneratorProps {
    apiKeys: ApiKeyEntry[];
    config: ConfigData | null;
    oauthAccounts: OAuthAccount[];
-   modelsDevData: ModelsDevData | null;
+   models: Record<string, ModelDefinition>;
    excludedModels?: string[];
    proxyUrl: string;
  }
@@ -44,7 +43,7 @@ const DEFAULT_PLUGINS = [
   "opencode-anthropic-auth@latest",
 ];
 
-export function OpenCodeConfigGenerator({ apiKeys, config, oauthAccounts, modelsDevData, excludedModels, proxyUrl }: OpenCodeConfigGeneratorProps) {
+export function OpenCodeConfigGenerator({ apiKeys, config, oauthAccounts, models: allModels, excludedModels, proxyUrl }: OpenCodeConfigGeneratorProps) {
    const [selectedKeyIndex, setSelectedKeyIndex] = useState(0);
    const [isExpanded, setIsExpanded] = useState(false);
    const [isModelsExpanded, setIsModelsExpanded] = useState(false);
@@ -127,7 +126,6 @@ export function OpenCodeConfigGenerator({ apiKeys, config, oauthAccounts, models
     };
   }, [mcps, plugins, isLoading]);
 
-  const allModels = buildAvailableModels(config, oauthAccounts, modelsDevData);
   const availableModels = excludedModels
     ? Object.fromEntries(
         Object.entries(allModels).filter(([id]) => !excludedModels.includes(id))

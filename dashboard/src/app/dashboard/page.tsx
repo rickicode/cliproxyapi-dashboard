@@ -7,10 +7,8 @@ import { ConfigSubscriber } from "@/components/config-subscriber";
 import { verifySession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import type { OhMyOpenCodeFullConfig } from "@/lib/config-generators/oh-my-opencode-types";
-
-function getProxyUrl(): string {
-  return process.env.API_URL || "";
-}
+import { fetchProxyModels } from "@/lib/config-generators/shared";
+import { getProxyUrl, buildAvailableModelsFromProxy } from "@/lib/config-generators/opencode";
 
 interface ManagementFetchParams {
   path: string;
@@ -44,25 +42,6 @@ async function getServiceHealth() {
     return res.ok;
   } catch {
     return false;
-  }
-}
-
-async function fetchModelsDevData() {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
-    const res = await fetch("https://models.dev/api.json", {
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);
-    
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
   }
 }
 
@@ -100,181 +79,23 @@ function extractOAuthAccounts(data: unknown): OAuthAccountEntry[] {
     }));
 }
 
-const PROVIDER_KEYS = {
-  GEMINI: "gemini-api-key",
-  CLAUDE: "claude-api-key",
-  CODEX: "codex-api-key",
-  OPENAI_COMPAT: "openai-compatibility",
-} as const;
-
-const GEMINI_MODEL_IDS = [
-  "gemini-2.5-flash",
-  "gemini-2.5-pro",
-  "gemini-2.0-flash",
-];
-
-const CLAUDE_MODEL_IDS = [
-  "claude-sonnet-4-5-20250514",
-  "claude-opus-4-5-20250414",
-];
-
-const CODEX_MODEL_IDS = [
-  "codex-mini-latest",
-  "o4-mini",
-];
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
-function hasProvider(config: Record<string, unknown> | null, key: string): boolean {
-  if (!config) return false;
-  const value = config[key];
-  if (Array.isArray(value)) return value.length > 0;
-  return Boolean(value);
-}
-
-function shouldExcludeModel(modelId: string): boolean {
-  return (
-    modelId.includes("embedding") ||
-    modelId.includes("tts") ||
-    modelId.includes("live") ||
-    modelId.includes("preview-tts")
-  );
-}
-
-function discoverModelsFromProvider(
-  modelsDevData: Record<string, unknown> | null,
-  providerKey: string
-): string[] {
-  if (!modelsDevData) return [];
-  const provider = modelsDevData[providerKey];
-  if (!isRecord(provider)) return [];
-  const models = provider.models;
-  if (!isRecord(models)) return [];
-  return Object.keys(models).filter((id) => !shouldExcludeModel(id));
-}
-
-function extractOpenAICompatModelIds(config: Record<string, unknown> | null): string[] {
-  if (!config) return [];
-  const compat = config["openai-compatibility"];
-  if (!Array.isArray(compat)) return [];
-
-  const ids: string[] = [];
-  for (const entry of compat) {
-    if (!isRecord(entry)) continue;
-    const prefix = typeof entry.prefix === "string" ? entry.prefix : "";
-    const entryModels = entry.models;
-    if (Array.isArray(entryModels)) {
-      for (const model of entryModels) {
-        if (typeof model === "string") {
-          ids.push(prefix ? `${prefix}${model}` : model);
-        }
-      }
-    }
-  }
-  return ids;
-}
-
-function extractOAuthModelAliasIds(
-  config: Record<string, unknown> | null,
-  oauthAccounts: OAuthAccountEntry[]
-): string[] {
-  if (!config) return [];
-  const aliases = config["oauth-model-alias"];
-  if (!isRecord(aliases)) return [];
-
-  const ids: string[] = [];
-  for (const [provider, aliasList] of Object.entries(aliases)) {
-    if (!Array.isArray(aliasList)) continue;
-
-    const hasMatchingAccount = oauthAccounts.some(
-      (account) =>
-        !account.disabled &&
-        (account.provider === provider ||
-          (typeof account.name === "string" && account.name.includes(provider)))
-    );
-    if (!hasMatchingAccount) continue;
-
-    for (const entry of aliasList) {
-      if (!isRecord(entry)) continue;
-      if (typeof entry.alias === "string") {
-        ids.push(entry.alias);
-      }
-    }
-  }
-  return ids;
-}
-
-interface ModelMetadata {
-  models: string[];
-  sourceMap: Map<string, string>;
-}
-
-function buildAllAvailableModelIds(
-  config: Record<string, unknown> | null,
-  oauthAccounts: OAuthAccountEntry[],
-  modelsDevData: Record<string, unknown> | null
-): ModelMetadata {
-  const seen = new Set<string>();
-  const ids: string[] = [];
+function buildSourceMap(proxyModels: { id: string; owned_by: string }[]): Map<string, string> {
   const sourceMap = new Map<string, string>();
-
-  const add = (modelId: string, source: string) => {
-    if (!seen.has(modelId)) {
-      seen.add(modelId);
-      ids.push(modelId);
-      sourceMap.set(modelId, source);
-    }
-  };
-
-  if (hasProvider(config, PROVIDER_KEYS.GEMINI)) {
-    for (const id of GEMINI_MODEL_IDS) add(id, "Gemini");
-    for (const id of discoverModelsFromProvider(modelsDevData, "google")) add(id, "Gemini");
+  for (const m of proxyModels) {
+    const source = m.owned_by === "anthropic" ? "Claude"
+      : m.owned_by === "google" || m.owned_by === "antigravity" ? "Gemini"
+      : m.owned_by === "openai" ? "OpenAI/Codex"
+      : m.owned_by;
+    sourceMap.set(m.id, source);
   }
-  if (hasProvider(config, PROVIDER_KEYS.CLAUDE)) {
-    for (const id of CLAUDE_MODEL_IDS) add(id, "Claude");
-    for (const id of discoverModelsFromProvider(modelsDevData, "anthropic")) add(id, "Claude");
-  }
-  if (hasProvider(config, PROVIDER_KEYS.CODEX)) {
-    for (const id of CODEX_MODEL_IDS) add(id, "OpenAI/Codex");
-    for (const id of discoverModelsFromProvider(modelsDevData, "openai")) add(id, "OpenAI/Codex");
-  }
-  const activeOAuthTypes = new Set<string>();
-  for (const account of oauthAccounts) {
-    if (!account.disabled) {
-      const provider = account.provider || account.type;
-      if (provider) activeOAuthTypes.add(provider);
-    }
-  }
-
-  if (!hasProvider(config, PROVIDER_KEYS.CLAUDE) && activeOAuthTypes.has("claude")) {
-    for (const id of CLAUDE_MODEL_IDS) add(id, "Claude");
-    for (const id of discoverModelsFromProvider(modelsDevData, "anthropic")) add(id, "Claude");
-  }
-  if (!hasProvider(config, PROVIDER_KEYS.GEMINI) && (activeOAuthTypes.has("gemini-cli") || activeOAuthTypes.has("antigravity"))) {
-    const source = activeOAuthTypes.has("antigravity") ? "Antigravity" : "Gemini";
-    for (const id of GEMINI_MODEL_IDS) add(id, source);
-    for (const id of discoverModelsFromProvider(modelsDevData, "google")) add(id, source);
-  }
-  if (!hasProvider(config, PROVIDER_KEYS.CODEX) && activeOAuthTypes.has("codex")) {
-    for (const id of CODEX_MODEL_IDS) add(id, "OpenAI/Codex");
-    for (const id of discoverModelsFromProvider(modelsDevData, "openai")) add(id, "OpenAI/Codex");
-  }
-
-  if (hasProvider(config, PROVIDER_KEYS.OPENAI_COMPAT)) {
-    for (const id of extractOpenAICompatModelIds(config)) add(id, "OpenAI-Compatible");
-  }
-  for (const id of extractOAuthModelAliasIds(config, oauthAccounts)) add(id, "Other");
-
-  return { models: ids, sourceMap };
+  return sourceMap;
 }
 
 export default async function QuickStartPage() {
-  const [config, isHealthy, oauthData, modelsDevData, session] = await Promise.all([
+  const [config, isHealthy, oauthData, session] = await Promise.all([
     fetchManagementJson({ path: "config" }),
     getServiceHealth(),
     fetchManagementJson({ path: "auth-files" }),
-    fetchModelsDevData(),
     verifySession(),
   ]);
 
@@ -351,7 +172,11 @@ export default async function QuickStartPage() {
 
   const providerCount = configProviderCount + activeOAuthProviders.size;
 
-  const { models: availableModelIds, sourceMap: modelSourceMap } = buildAllAvailableModelIds(config, oauthAccounts, modelsDevData);
+  const apiKeyForProxy = userApiKeys.length > 0 ? userApiKeys[0].key : "";
+  const proxyModels = apiKeyForProxy ? await fetchProxyModels(getProxyUrl(), apiKeyForProxy) : [];
+  const availableModelIds = proxyModels.map((m) => m.id);
+  const modelSourceMap = buildSourceMap(proxyModels);
+  const allProxyModels = buildAvailableModelsFromProxy(proxyModels);
 
    return (
      <div className="space-y-5">
@@ -418,13 +243,13 @@ export default async function QuickStartPage() {
         </div>
       </div>
 
-       <QuickStartConfigSection
-         apiKeys={apiKeys}
-         config={config}
-         oauthAccounts={oauthAccounts}
-         modelsDevData={modelsDevData}
-         availableModels={availableModelIds}
-         modelSourceMap={modelSourceMap}
+        <QuickStartConfigSection
+          apiKeys={apiKeys}
+          config={config}
+          oauthAccounts={oauthAccounts}
+          availableModels={availableModelIds}
+          allModels={allProxyModels}
+          modelSourceMap={modelSourceMap}
          initialExcludedModels={initialExcludedModels}
          agentOverrides={agentOverrides}
          hasSyncActive={hasSyncActive}
