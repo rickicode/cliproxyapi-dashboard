@@ -182,6 +182,56 @@ client.connect()
       CONSTRAINT "system_settings_pkey" PRIMARY KEY ("id")
     );
     CREATE UNIQUE INDEX IF NOT EXISTS "system_settings_key_key" ON "system_settings"("key");
+
+    -- Custom providers table (user-defined OpenAI-compatible providers)
+    CREATE TABLE IF NOT EXISTS "custom_providers" (
+      "id" TEXT NOT NULL,
+      "userId" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "providerId" TEXT NOT NULL,
+      "baseUrl" TEXT NOT NULL,
+      "apiKeyHash" TEXT NOT NULL,
+      "prefix" TEXT,
+      "proxyUrl" TEXT,
+      "headers" JSONB DEFAULT '{}',
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL,
+      CONSTRAINT "custom_providers_pkey" PRIMARY KEY ("id")
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS "custom_providers_providerId_key" ON "custom_providers"("providerId");
+    CREATE INDEX IF NOT EXISTS "custom_providers_userId_idx" ON "custom_providers"("userId");
+    CREATE INDEX IF NOT EXISTS "custom_providers_providerId_idx" ON "custom_providers"("providerId");
+    DO $$ BEGIN
+      ALTER TABLE "custom_providers" ADD CONSTRAINT "custom_providers_userId_fkey"
+        FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE;
+    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+    -- Custom provider models table (model mappings for custom providers)
+    CREATE TABLE IF NOT EXISTS "custom_provider_models" (
+      "id" TEXT NOT NULL,
+      "customProviderId" TEXT NOT NULL,
+      "upstreamName" TEXT NOT NULL,
+      "alias" TEXT NOT NULL,
+      CONSTRAINT "custom_provider_models_pkey" PRIMARY KEY ("id")
+    );
+    CREATE INDEX IF NOT EXISTS "custom_provider_models_customProviderId_idx" ON "custom_provider_models"("customProviderId");
+    DO $$ BEGIN
+      ALTER TABLE "custom_provider_models" ADD CONSTRAINT "custom_provider_models_customProviderId_fkey"
+        FOREIGN KEY ("customProviderId") REFERENCES "custom_providers"("id") ON DELETE CASCADE;
+    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+    -- Custom provider excluded models table (excluded model patterns for custom providers)
+    CREATE TABLE IF NOT EXISTS "custom_provider_excluded_models" (
+      "id" TEXT NOT NULL,
+      "customProviderId" TEXT NOT NULL,
+      "pattern" TEXT NOT NULL,
+      CONSTRAINT "custom_provider_excluded_models_pkey" PRIMARY KEY ("id")
+    );
+    CREATE INDEX IF NOT EXISTS "custom_provider_excluded_models_customProviderId_idx" ON "custom_provider_excluded_models"("customProviderId");
+    DO $$ BEGIN
+      ALTER TABLE "custom_provider_excluded_models" ADD CONSTRAINT "custom_provider_excluded_models_customProviderId_fkey"
+        FOREIGN KEY ("customProviderId") REFERENCES "custom_providers"("id") ON DELETE CASCADE;
+    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
   `))
   .then(() => {
     console.log('[dashboard] Tables ready');
