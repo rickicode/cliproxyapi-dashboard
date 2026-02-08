@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 
@@ -121,9 +121,7 @@ function sanitizeApiKeys(
   return sanitized;
 }
 
-async function requireAdmin(
-  _request: NextRequest
-): Promise<{ userId: string; username: string } | NextResponse> {
+async function requireAdmin(): Promise<{ userId: string; username: string } | NextResponse> {
   const session = await verifySession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -144,8 +142,8 @@ async function requireAdmin(
   return { userId: session.userId, username: session.username };
 }
 
-export async function GET(request: NextRequest) {
-  const authResult = await requireAdmin(request);
+export async function GET() {
+  const authResult = await requireAdmin();
   if (authResult instanceof NextResponse) {
     return authResult;
   }

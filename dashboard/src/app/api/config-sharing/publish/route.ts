@@ -46,7 +46,7 @@ function isUpdatePublishRequest(body: unknown): body is UpdatePublishRequest {
   return hasValidField;
 }
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   const session = await verifySession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

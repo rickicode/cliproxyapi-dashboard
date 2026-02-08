@@ -43,7 +43,8 @@ const DEFAULT_PLUGINS = [
   "opencode-anthropic-auth@latest",
 ];
 
-export function OpenCodeConfigGenerator({ apiKeys, config, oauthAccounts, models: allModels, excludedModels, proxyUrl }: OpenCodeConfigGeneratorProps) {
+export function OpenCodeConfigGenerator(props: OpenCodeConfigGeneratorProps) {
+  const { apiKeys, oauthAccounts, models: allModels, excludedModels, proxyUrl } = props;
    const [selectedKeyIndex, setSelectedKeyIndex] = useState(0);
    const [isExpanded, setIsExpanded] = useState(false);
    const [isModelsExpanded, setIsModelsExpanded] = useState(false);

@@ -19,6 +19,20 @@ const UpdateCustomProviderSchema = z.object({
   excludedModels: z.array(z.string()).optional()
 });
 
+interface ManagementApiKeyEntry {
+  "api-key"?: string;
+}
+
+interface ManagementProviderEntry {
+  name?: string;
+  "api-key-entries"?: ManagementApiKeyEntry[];
+  [key: string]: unknown;
+}
+
+function isManagementProviderEntry(value: unknown): value is ManagementProviderEntry {
+  return typeof value === "object" && value !== null;
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -112,13 +126,16 @@ export async function PATCH(
         });
         
         if (getRes.ok) {
-          const configData = await getRes.json();
-          const currentList = configData["openai-compatibility"] || [];
+          const configData = (await getRes.json()) as Record<string, unknown>;
+          const openAiCompatibility = configData["openai-compatibility"];
+          const currentList: ManagementProviderEntry[] = Array.isArray(openAiCompatibility)
+            ? openAiCompatibility.filter(isManagementProviderEntry)
+            : [];
           
           let existingKey = validated.apiKey;
 
           if (!existingKey) {
-            const currentEntry = currentList.find((p: any) => p.name === provider.providerId);
+            const currentEntry = currentList.find((entry) => entry.name === provider.providerId);
             if (currentEntry && Array.isArray(currentEntry["api-key-entries"]) && currentEntry["api-key-entries"].length > 0) {
               existingKey = currentEntry["api-key-entries"][0]["api-key"];
             }
@@ -138,7 +155,7 @@ export async function PATCH(
               ...(provider.headers ? { headers: provider.headers } : {})
             };
 
-            const newList = currentList.map((entry: any) => 
+            const newList = currentList.map((entry) => 
               entry.name === provider.providerId ? updatedEntry : entry
             );
 
@@ -208,10 +225,13 @@ export async function DELETE(
         });
         
         if (getRes.ok) {
-          const configData = await getRes.json();
-          const currentList = configData["openai-compatibility"] || [];
+          const configData = (await getRes.json()) as Record<string, unknown>;
+          const openAiCompatibility = configData["openai-compatibility"];
+          const currentList: ManagementProviderEntry[] = Array.isArray(openAiCompatibility)
+            ? openAiCompatibility.filter(isManagementProviderEntry)
+            : [];
 
-          const newList = currentList.filter((entry: any) => entry.name !== existingProvider.providerId);
+          const newList = currentList.filter((entry) => entry.name !== existingProvider.providerId);
 
           await fetch(`${managementUrl}/openai-compatibility`, {
             method: "PUT",

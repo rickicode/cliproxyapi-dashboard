@@ -20,7 +20,7 @@ const CreateCustomProviderSchema = z.object({
   excludedModels: z.array(z.string()).optional()
 });
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   const session = await verifySession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

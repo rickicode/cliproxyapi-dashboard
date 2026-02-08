@@ -237,14 +237,13 @@ function ModelBadge({
   );
 }
 
-export function OhMyOpenCodeConfigGenerator({
-   apiKeys,
-   config,
-   oauthAccounts,
-   proxyModelIds,
-   excludedModels,
-   agentOverrides: initialOverrides,
- }: OhMyOpenCodeConfigGeneratorProps) {
+export function OhMyOpenCodeConfigGenerator(props: OhMyOpenCodeConfigGeneratorProps) {
+   const {
+     apiKeys,
+     proxyModelIds,
+     excludedModels,
+     agentOverrides: initialOverrides,
+   } = props;
    const [isExpanded, setIsExpanded] = useState(false);
    const [overrides, setOverrides] = useState<OhMyOpenCodeFullConfig>(initialOverrides ?? { agents: {}, categories: {} });
    const [saving, setSaving] = useState(false);
@@ -313,7 +312,8 @@ export function OhMyOpenCodeConfigGenerator({
     const existing = overrides.agents?.[agent] ?? {};
     const newAgents = { ...overrides.agents };
     if (model === undefined) {
-      const { model: _, ...rest } = existing;
+      const rest = { ...existing };
+      delete rest.model;
       if (Object.keys(rest).length === 0) {
         delete newAgents[agent];
       } else {
@@ -350,7 +350,8 @@ export function OhMyOpenCodeConfigGenerator({
     const existing = overrides.categories?.[category] ?? {};
     const newCategories = { ...overrides.categories };
     if (model === undefined) {
-      const { model: _, ...rest } = existing;
+      const rest = { ...existing };
+      delete rest.model;
       if (Object.keys(rest).length === 0) {
         delete newCategories[category];
       } else {

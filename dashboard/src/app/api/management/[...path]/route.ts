@@ -69,7 +69,7 @@ async function proxyRequest(
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(targetUrl);
-  } catch (error) {
+  } catch {
     console.error("Invalid target URL:", targetUrl);
     return NextResponse.json(
       { error: "Invalid request path" },
