@@ -14,8 +14,7 @@ export async function GET(request: NextRequest) {
   try {
     const bundle = await generateConfigBundle(authResult.userId, authResult.syncApiKey);
 
-    // Fire-and-forget: update lastSyncedAt for active subscribers
-    void prisma.configSubscription.updateMany({
+    await prisma.configSubscription.updateMany({
       where: {
         userId: authResult.userId,
         isActive: true,
