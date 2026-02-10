@@ -4,6 +4,7 @@ import { prisma } from "./db";
 import { logger } from "./logger";
 
 export const AUDIT_ACTION = {
+  USER_LOGIN: "USER_LOGIN",
   USER_CREATED: "USER_CREATED",
   USER_DELETED: "USER_DELETED",
   API_KEY_REVOKED: "API_KEY_REVOKED",

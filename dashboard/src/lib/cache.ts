@@ -6,9 +6,18 @@ interface CacheEntry<T> {
 export class LRUCache<T> {
   private cache = new Map<string, CacheEntry<T>>();
   private maxSize: number;
+  private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
 
-  constructor(maxSize = 100) {
+  constructor(maxSize = 100, cleanupIntervalMs = 60_000) {
     this.maxSize = maxSize;
+    this.cleanupIntervalId = setInterval(() => this.cleanup(), cleanupIntervalMs);
+  }
+
+  destroy(): void {
+    if (this.cleanupIntervalId) {
+      clearInterval(this.cleanupIntervalId);
+      this.cleanupIntervalId = null;
+    }
   }
 
   get(key: string): T | null {

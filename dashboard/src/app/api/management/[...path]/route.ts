@@ -2,17 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { posix as pathPosix } from "path";
 import { verifySession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
+import { env } from "@/lib/env";
+import { logger } from "@/lib/logger";
 
-const BACKEND_API_URL =
-  process.env.CLIPROXYAPI_MANAGEMENT_URL ||
-  "http://cliproxyapi:8317/v0/management";
-const MANAGEMENT_API_KEY = process.env.MANAGEMENT_API_KEY;
+const BACKEND_API_URL = env.CLIPROXYAPI_MANAGEMENT_URL;
+const MANAGEMENT_API_KEY = env.MANAGEMENT_API_KEY;
+const FETCH_TIMEOUT_MS = 30_000;
 
 const ALLOWED_HOST = (() => {
   try {
     return new URL(BACKEND_API_URL).host;
   } catch (error) {
-    console.error("Invalid BACKEND_API_URL:", error);
+    logger.error({ err: error }, "Invalid BACKEND_API_URL");
     return "cliproxyapi:8317";
   }
 })();
@@ -123,19 +124,21 @@ async function proxyRequest(
 
   const normalizedPath = normalizeAndValidateManagementPath(rawPath);
   if (!normalizedPath) {
-    console.warn("Blocked invalid management proxy path", {
-      method,
-      rawPath,
-      userId: session.userId,
-      source: "api/management/[...path]",
-    });
+    logger.warn({ method, rawPath, userId: session.userId }, "Blocked invalid management proxy path");
     return NextResponse.json(
       { error: "Invalid request path" },
       { status: 400 }
     );
   }
 
-  if (!user?.isAdmin && !isNonAdminAllowedManagementRequest(method, normalizedPath)) {
+  if (!user) {
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  if (!user.isAdmin && !isNonAdminAllowedManagementRequest(method, normalizedPath)) {
     return NextResponse.json(
       { error: "Forbidden: Admin access required" },
       { status: 403 }
@@ -143,7 +146,7 @@ async function proxyRequest(
   }
 
   if (!MANAGEMENT_API_KEY) {
-    console.error("MANAGEMENT_API_KEY is not configured");
+    logger.error("MANAGEMENT_API_KEY is not configured");
     return NextResponse.json(
       { error: "Server configuration error" },
       { status: 500 }
@@ -160,7 +163,7 @@ async function proxyRequest(
   try {
     parsedUrl = new URL(targetUrl.toString());
   } catch {
-    console.error("Invalid target URL:", targetUrl.toString());
+    logger.error({ targetUrl: targetUrl.toString() }, "Invalid target URL");
     return NextResponse.json(
       { error: "Invalid request path" },
       { status: 400 }
@@ -168,7 +171,7 @@ async function proxyRequest(
   }
 
   if (parsedUrl.host !== ALLOWED_HOST) {
-    console.error(`SSRF attempt blocked: ${parsedUrl.host} !== ${ALLOWED_HOST}`);
+    logger.error({ attemptedHost: parsedUrl.host, allowedHost: ALLOWED_HOST }, "SSRF attempt blocked");
     return NextResponse.json(
       { error: "Forbidden" },
       { status: 403 }
@@ -193,11 +196,21 @@ async function proxyRequest(
       }
     }
 
-    const response = await fetch(targetUrl.toString(), {
-      method,
-      headers,
-      body,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await fetch(targetUrl.toString(), {
+        method,
+        headers,
+        body,
+        signal: controller.signal,
+        cache: "no-store",
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const responseContentType = response.headers.get("content-type");
     const responseData = await response.text();
@@ -209,7 +222,14 @@ async function proxyRequest(
       },
     });
   } catch (error) {
-    console.error("Proxy request error:", error);
+    if (error instanceof Error && error.name === "AbortError") {
+      logger.error({ err: error, path: normalizedPath, timeoutMs: FETCH_TIMEOUT_MS }, "Proxy request timeout");
+      return NextResponse.json(
+        { error: "Request timeout" },
+        { status: 504 }
+      );
+    }
+    logger.error({ err: error }, "Proxy request error");
     return NextResponse.json(
       { error: "Failed to proxy request" },
       { status: 502 }

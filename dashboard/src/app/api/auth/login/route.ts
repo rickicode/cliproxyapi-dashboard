@@ -12,6 +12,7 @@ import {
   isValidUsernameFormat,
 } from "@/lib/auth/validation";
 import { ERROR_CODE, Errors, apiErrorWithHeaders } from "@/lib/errors";
+import { AUDIT_ACTION, logAuditAsync } from "@/lib/audit";
 
 const LOGIN_ATTEMPTS_LIMIT = 10;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -85,6 +86,13 @@ export async function POST(request: NextRequest) {
       { userId: user.id, username: user.username },
       token
     );
+
+    logAuditAsync({
+      userId: user.id,
+      action: AUDIT_ACTION.USER_LOGIN,
+      metadata: { username: user.username },
+      ipAddress: ipAddress,
+    });
 
     return NextResponse.json({
       success: true,

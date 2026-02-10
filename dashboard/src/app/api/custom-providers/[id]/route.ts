@@ -141,8 +141,12 @@ export async function PATCH(
 
           if (!existingKey) {
             const currentEntry = currentList.find((entry) => entry.name === provider.providerId);
-            if (currentEntry && Array.isArray(currentEntry["api-key-entries"]) && currentEntry["api-key-entries"].length > 0) {
-              existingKey = currentEntry["api-key-entries"][0]["api-key"];
+            const apiKeyEntries = currentEntry?.["api-key-entries"];
+            if (Array.isArray(apiKeyEntries) && apiKeyEntries.length > 0) {
+              const firstEntry = apiKeyEntries[0];
+              if (firstEntry && typeof firstEntry["api-key"] === "string") {
+                existingKey = firstEntry["api-key"];
+              }
             }
           }
 
