@@ -87,6 +87,10 @@ async function flushBuffer(): Promise<void> {
   }
   
   flushScheduled = false;
+  
+  if (writeBuffer.length > 0) {
+    scheduleFlush();
+  }
 }
 
 function scheduleFlush(): void {
@@ -145,7 +149,6 @@ export function addLog(entry: LogEntry): void {
 
   const line = JSON.stringify(entry) + "\n";
   writeBuffer.push(line);
-  currentFileSize += Buffer.byteLength(line);
   scheduleFlush();
 }
 

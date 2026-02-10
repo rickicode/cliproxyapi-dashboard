@@ -204,6 +204,12 @@ async function proxyRequest(
     if (method !== "GET" && method !== "HEAD") {
       const rawBody = await request.text();
       if (rawBody) {
+        if (rawBody.length > MAX_BODY_SIZE) {
+          return NextResponse.json(
+            { error: "Payload too large" },
+            { status: 413 }
+          );
+        }
         body = rawBody;
       }
     }

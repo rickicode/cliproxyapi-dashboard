@@ -24,7 +24,7 @@ interface CreateApiKeyResponse {
   key: string;
   name: string;
   createdAt: string;
-  syncStatus: "ok" | "failed";
+  syncStatus: "ok" | "failed" | "pending";
   syncMessage?: string;
 }
 
@@ -125,18 +125,19 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const syncResult = await syncKeysToCliProxyApi();
-    if (!syncResult.ok) {
-      logger.error({ error: syncResult.error }, "Sync failed after API key creation");
-    }
+    syncKeysToCliProxyApi().then((result) => {
+      if (!result.ok) {
+        logger.error({ error: result.error }, "Background sync failed after API key creation");
+      }
+    }).catch(() => {});
 
     const response: CreateApiKeyResponse = {
       id: apiKey.id,
       key: apiKey.key,
       name: apiKey.name,
       createdAt: apiKey.createdAt.toISOString(),
-      syncStatus: syncResult.ok ? "ok" : "failed",
-      syncMessage: syncResult.ok ? undefined : "Backend sync pending - key created but may not work immediately",
+      syncStatus: "pending",
+      syncMessage: "Key created - backend sync in progress",
     };
 
     return NextResponse.json(response, { status: 201 });

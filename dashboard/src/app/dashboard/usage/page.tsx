@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
@@ -337,9 +337,8 @@ export default function UsagePage() {
                          const hasModels = entry.models && Object.keys(entry.models).length > 0;
                          
                          return (
-                           <>
+                           <React.Fragment key={api}>
                              <tr 
-                               key={api} 
                                className={`border-b border-white/10 ${hasModels ? 'cursor-pointer hover:bg-white/5' : ''}`}
                                onClick={() => {
                                  if (hasModels) {
@@ -370,7 +369,7 @@ export default function UsagePage() {
                              </tr>
                              
                              {isExpanded && hasModels && (
-                               <tr key={`${api}-expanded`}>
+                               <tr>
                                  <td colSpan={6} className="p-0 bg-white/[0.02]">
                                    <div className="p-4 pl-12">
                                      <table className="w-full text-xs">
@@ -402,9 +401,9 @@ export default function UsagePage() {
                                  </td>
                                </tr>
                              )}
-                           </>
+                           </React.Fragment>
                          );
-                       })}
+                        })}
                     </tbody>
                   </table>
                 </div>

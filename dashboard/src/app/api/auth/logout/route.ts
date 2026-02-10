@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteSession, verifySession } from "@/lib/auth/session";
+import { validateOrigin } from "@/lib/auth/origin";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
+  const originError = validateOrigin(request);
+  if (originError) {
+    return originError;
+  }
+
   try {
     const session = await verifySession();
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() 

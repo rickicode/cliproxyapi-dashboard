@@ -235,8 +235,8 @@ export default function AdminLogsPage() {
       {stats && (
         <div className="flex flex-wrap gap-4 text-xs text-white/60">
           <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-green-500" />
-            Persistent storage enabled
+            <span className={`size-2 rounded-full ${stats.persistent ? "bg-green-500" : "bg-yellow-500"}`} />
+            Persistent storage {stats.persistent ? "enabled" : "disabled"}
           </span>
           <span>Memory: {stats.memoryCount} logs</span>
           <span>File: {stats.fileCount} logs ({stats.fileSizeKB} KB)</span>

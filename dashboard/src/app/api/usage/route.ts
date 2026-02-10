@@ -92,6 +92,7 @@ function filterAndLabelApis(
   const result: Record<string, ApiUsageEntry> = {};
   const keySet = new Set(userKeys.map((k) => k.key));
   const keyNameMap = new Map(userKeys.map((k) => [k.key, k.name]));
+  const usedLabels = new Set<string>();
   
   let totalRequests = 0;
   let totalTokens = 0;
@@ -106,7 +107,16 @@ function filterAndLabelApis(
     }
 
     const keyName = keyNameMap.get(rawKey);
-    const label = keyName ? keyName : (isAdmin ? `Unknown Key` : "My Key");
+    let baseLabel = keyName ? keyName : (isAdmin ? `Unknown Key` : "My Key");
+    
+    // Ensure unique labels by appending suffix if collision detected
+    let label = baseLabel;
+    let suffix = 1;
+    while (usedLabels.has(label)) {
+      suffix++;
+      label = `${baseLabel} (${suffix})`;
+    }
+    usedLabels.add(label);
 
     result[label] = { ...entry };
     totalRequests += entry.total_requests || 0;
@@ -147,11 +157,7 @@ export async function GET(request: NextRequest) {
     });
     const isAdmin = user?.isAdmin ?? false;
 
-    const { searchParams } = new URL(request.url);
-    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "50", 10) || 50));
-
-    const cacheKey = `${CACHE_KEYS.usage(session.userId)}:${isAdmin}:${page}:${limit}`;
+    const cacheKey = `${CACHE_KEYS.usage(session.userId)}:${isAdmin}`;
     const cached = usageCache.get(cacheKey);
     if (cached) {
       return NextResponse.json(cached);
@@ -217,12 +223,6 @@ export async function GET(request: NextRequest) {
         tokens_by_hour: isAdmin ? rawData.tokens_by_hour : undefined,
       },
       isAdmin,
-      pagination: {
-        page,
-        limit,
-        total: userKeys.length,
-        hasMore: false,
-      },
     };
 
     usageCache.set(cacheKey, responseData, CACHE_TTL.USAGE);

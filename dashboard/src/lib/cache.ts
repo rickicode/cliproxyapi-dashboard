@@ -35,13 +35,19 @@ export class LRUCache<T> {
   }
 
   set(key: string, value: T, ttlMs: number): void {
-    if (this.cache.size >= this.maxSize) {
+    const existingEntry = this.cache.has(key);
+    
+    if (!existingEntry && this.cache.size >= this.maxSize) {
       const firstKey = this.cache.keys().next().value;
       if (firstKey !== undefined) {
         this.cache.delete(firstKey);
       }
     }
 
+    if (existingEntry) {
+      this.cache.delete(key);
+    }
+    
     this.cache.set(key, {
       value,
       expiresAt: Date.now() + ttlMs,
