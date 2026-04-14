@@ -13,6 +13,7 @@ import { OAuthCredentialList, type OAuthAccountWithOwnership } from "@/component
 import { OAuthImportForm } from "@/components/providers/oauth-import-form";
 import { OAuthActions } from "@/components/providers/oauth-actions";
 import { useTranslations } from "next-intl";
+import { parseOAuthImportJson, type ParsedImportPayload } from "@/lib/oauth-import-validation";
 
 type ShowToast = ReturnType<typeof useToast>["showToast"];
 
@@ -130,6 +131,13 @@ const CALLBACK_VALIDATION = {
 type CallbackValidation =
   (typeof CALLBACK_VALIDATION)[keyof typeof CALLBACK_VALIDATION];
 
+interface BulkImportSummary {
+  total: number;
+  successCount: number;
+  failureCount: number;
+  failedResults: Array<{ email: string; error?: string }>;
+}
+
 interface AuthUrlResponse {
   status?: string;
   url?: string;
@@ -228,6 +236,7 @@ export function OAuthSection({
   const [importFileName, setImportFileName] = useState("");
   const [importStatus, setImportStatus] = useState<"idle" | "validating" | "uploading" | "success" | "error">("idle");
   const [importErrorMessage, setImportErrorMessage] = useState<string | null>(null);
+  const [importBulkSummary, setImportBulkSummary] = useState<BulkImportSummary | null>(null);
 
   const selectedOAuthProvider = getOAuthProviderById(selectedOAuthProviderId);
   const selectedOAuthProviderRequiresCallback = selectedOAuthProvider?.requiresCallback ?? true;
@@ -640,6 +649,7 @@ export function OAuthSection({
     setImportFileName("");
     setImportStatus("idle");
     setImportErrorMessage(null);
+    setImportBulkSummary(null);
     setIsImportModalOpen(true);
   };
 
@@ -650,6 +660,7 @@ export function OAuthSection({
     setImportFileName("");
     setImportStatus("idle");
     setImportErrorMessage(null);
+    setImportBulkSummary(null);
   };
 
   const handleImportFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -659,16 +670,18 @@ export function OAuthSection({
     if (!file.name.endsWith(".json")) {
       setImportFileName("");
       setImportJsonContent("");
-      setImportErrorMessage("Please select a JSON file.");
+      setImportErrorMessage(t("errorImportJsonFileRequired"));
       setImportStatus("error");
+      setImportBulkSummary(null);
       return;
     }
 
     if (file.size > 1024 * 1024) {
       setImportFileName("");
       setImportJsonContent("");
-      setImportErrorMessage("File is too large (max 1MB).");
+      setImportErrorMessage(t("errorImportJsonTooLarge"));
       setImportStatus("error");
+      setImportBulkSummary(null);
       return;
     }
 
@@ -682,28 +695,29 @@ export function OAuthSection({
       }
     };
     reader.onerror = () => {
-      setImportErrorMessage("Failed to read file.");
+      setImportErrorMessage(t("errorImportJsonReadFailed"));
       setImportStatus("error");
+      setImportBulkSummary(null);
     };
     reader.readAsText(file);
   };
 
+  const parseImportJson = (content: string): { ok: true; value: ParsedImportPayload } | { ok: false; error: string } =>
+    parseOAuthImportJson(importProviderId, content, t);
+
   const validateImportJson = (content: string) => {
-    try {
-      const parsed = JSON.parse(content);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        setImportErrorMessage("File must contain a JSON object, not an array.");
-        setImportStatus("error");
-        return false;
-      }
-      setImportErrorMessage(null);
-      setImportStatus("idle");
-      return true;
-    } catch {
-      setImportErrorMessage("Invalid JSON content.");
+    const parsed = parseImportJson(content);
+    if (!parsed.ok) {
+      setImportErrorMessage(parsed.error);
       setImportStatus("error");
+      setImportBulkSummary(null);
       return false;
     }
+
+    setImportErrorMessage(null);
+    setImportStatus("idle");
+    setImportBulkSummary(null);
+    return true;
   };
 
   const handleImportJsonChange = (value: string) => {
@@ -713,28 +727,43 @@ export function OAuthSection({
     } else {
       setImportErrorMessage(null);
       setImportStatus("idle");
+      setImportBulkSummary(null);
     }
   };
 
   const handleImportSubmit = async () => {
     if (!importProviderId || !importJsonContent.trim()) return;
 
-    if (!validateImportJson(importJsonContent)) return;
+    const parsedImport = parseImportJson(importJsonContent);
+    if (!parsedImport.ok) {
+      setImportErrorMessage(parsedImport.error);
+      setImportStatus("error");
+      setImportBulkSummary(null);
+      return;
+    }
 
     const fileName = importFileName || `${importProviderId}-credential.json`;
 
     setImportStatus("uploading");
     setImportErrorMessage(null);
+    setImportBulkSummary(null);
 
     try {
+      const requestBody = parsedImport.value.mode === "bulk"
+        ? {
+            provider: importProviderId,
+            bulkCredentials: parsedImport.value.bulkCredentials,
+          }
+        : {
+            provider: importProviderId,
+            fileName,
+            fileContent: importJsonContent.trim(),
+          };
+
       const res = await fetch(API_ENDPOINTS.PROVIDERS.OAUTH_IMPORT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: importProviderId,
-          fileName,
-          fileContent: importJsonContent.trim(),
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -745,13 +774,55 @@ export function OAuthSection({
         return;
       }
 
+      if (parsedImport.value.mode === "bulk") {
+        const results = Array.isArray(data.data?.results) ? data.data.results : [];
+        const summary = data.data?.summary as {
+          total?: number;
+          successCount?: number;
+          failureCount?: number;
+        } | undefined;
+        const nextSummary: BulkImportSummary = {
+          total: summary?.total ?? results.length,
+          successCount: summary?.successCount ?? results.filter((result: { ok?: boolean }) => result.ok).length,
+          failureCount: summary?.failureCount ?? results.filter((result: { ok?: boolean }) => !result.ok).length,
+          failedResults: results
+            .filter((result: { ok?: boolean }) => !result.ok)
+            .map((result: { email?: string; error?: string }) => ({
+              email: result.email || t("unknownLabel"),
+              error: result.error,
+            })),
+        };
+
+        setImportBulkSummary(nextSummary);
+        setImportStatus("success");
+
+        if (nextSummary.failureCount === 0) {
+          showToast(t("toastOAuthBulkImportSuccess", { count: nextSummary.successCount }), "success");
+        } else if (nextSummary.successCount === 0) {
+          showToast(t("toastOAuthBulkImportFailed"), "error");
+        } else {
+          showToast(
+            t("toastOAuthBulkImportPartial", {
+              successCount: nextSummary.successCount,
+              failureCount: nextSummary.failureCount,
+            }),
+            "success"
+          );
+        }
+
+        await refreshProviders();
+        void loadAccounts();
+        return;
+      }
+
       setImportStatus("success");
       showToast(t("toastOAuthImportSuccess"), "success");
       await refreshProviders();
       void loadAccounts();
     } catch {
       setImportStatus("error");
-      setImportErrorMessage("Network error while importing credential.");
+      setImportBulkSummary(null);
+      setImportErrorMessage(t("errorImportNetwork"));
     }
   };
 
@@ -1029,9 +1100,10 @@ export function OAuthSection({
         isOpen={isImportModalOpen}
         providerName={importProviderName}
         jsonContent={importJsonContent}
-        fileName={importFileName}
         status={importStatus}
         errorMessage={importErrorMessage}
+        supportsBulkImport={importProviderId === "codex"}
+        bulkImportSummary={importBulkSummary}
         onClose={closeImportModal}
         onFileSelect={handleImportFileSelect}
         onJsonChange={handleImportJsonChange}

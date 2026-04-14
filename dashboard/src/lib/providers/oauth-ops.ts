@@ -17,6 +17,41 @@ import {
   type ToggleOAuthResult,
   type OAuthAccountWithOwnership,
 } from "./management-api";
+import type { CodexBulkCredentialInput } from "@/lib/validation/schemas";
+import { inferOAuthProviderFromIdentifiers, isMeaningfulProviderValue } from "./provider-inference";
+
+export interface BulkImportOAuthCredentialItemResult {
+  email: string;
+  ok: boolean;
+  id?: string;
+  accountName?: string;
+  error?: string;
+}
+
+export interface BulkImportOAuthCredentialResult {
+  results: BulkImportOAuthCredentialItemResult[];
+  summary: {
+    total: number;
+    successCount: number;
+    failureCount: number;
+  };
+}
+
+export function buildCodexBulkImportFileName(email: string): string {
+  const safeEmail = Array.from(email.trim())
+    .map((char) => /[A-Za-z0-9@._+-]/.test(char) ? char : encodeURIComponent(char))
+    .join("");
+  return `codex_${safeEmail}.json`;
+}
+
+export function buildCodexBulkImportFileContent(credential: CodexBulkCredentialInput): string {
+  const { email, ...payload } = credential;
+  return JSON.stringify({
+    type: "codex",
+    email,
+    ...payload,
+  });
+}
 
 export async function contributeOAuthAccount(
   userId: string,
@@ -247,6 +282,43 @@ export async function importOAuthCredential(
   }
 }
 
+export async function importBulkCodexOAuthCredentials(
+  userId: string,
+  credentials: CodexBulkCredentialInput[]
+): Promise<BulkImportOAuthCredentialResult> {
+  const results: BulkImportOAuthCredentialItemResult[] = [];
+
+  for (const credential of credentials) {
+    const { email } = credential;
+    const fileName = buildCodexBulkImportFileName(email);
+    const result = await importOAuthCredential(
+      userId,
+      "codex",
+      fileName,
+      buildCodexBulkImportFileContent(credential)
+    );
+
+    results.push({
+      email,
+      ok: result.ok,
+      id: result.id,
+      accountName: result.accountName,
+      error: result.error,
+    });
+  }
+
+  const successCount = results.filter((result) => result.ok).length;
+
+  return {
+    results,
+    summary: {
+      total: results.length,
+      successCount,
+      failureCount: results.length - successCount,
+    },
+  };
+}
+
 export async function listOAuthWithOwnership(
   userId: string,
   isAdmin: boolean = false
@@ -316,7 +388,10 @@ export async function listOAuthWithOwnership(
          id: canSeeDetails ? file.id : `account-${index + 1}`,
          accountName: canSeeDetails ? file.name : `Account ${index + 1}`,
          accountEmail: canSeeDetails ? file.email || null : null,
-         provider: file.provider || file.type || "unknown",
+         provider:
+           (isMeaningfulProviderValue(file.provider) ? file.provider :
+             isMeaningfulProviderValue(file.type) ? file.type :
+               inferOAuthProviderFromIdentifiers(file.id, file.name, file.email)) || "unknown",
          ownerUsername: canSeeDetails ? ownership?.user.username || null : null,
          ownerUserId: canSeeDetails ? ownership?.user.id || null : null,
          isOwn,

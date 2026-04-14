@@ -263,6 +263,8 @@ Replace `example.com` with your actual domain.
 
 API keys and AI providers can be configured through the Dashboard UI after first login. Alternatively, you can edit `infrastructure/config/config.yaml` directly.
 
+If you need to onboard many Codex accounts at once, the Dashboard `Providers` page supports bulk JSON import for Codex OAuth credentials. The input format is a JSON array where each item contains an `email` plus the credential payload fields such as `access_token` and `refresh_token`. See [CONFIGURATION.md](./CONFIGURATION.md#codex-bulk-import) for the exact format.
+
 ### 6. Create Systemd Service
 
 ```bash

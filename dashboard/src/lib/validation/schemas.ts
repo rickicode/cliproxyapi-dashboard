@@ -340,4 +340,42 @@ export const ImportOAuthCredentialSchema = z.object({
   fileContent: z.string().min(2, "File content is required").max(1024 * 1024, "File content too large (max 1MB)"),
 });
 
+export const CodexBulkCredentialSchema = z.object({
+  email: z.string().trim().min(1, "Email is required"),
+}).catchall(z.unknown()).superRefine((value, ctx) => {
+  if (Object.keys(value).length < 2) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Credential payload must include email and at least one credential field",
+    });
+  }
+});
+
+export const BulkImportOAuthCredentialSchema = z.object({
+  provider: z.literal("codex"),
+  bulkCredentials: z.array(CodexBulkCredentialSchema).min(1, "At least one credential is required").max(1000, "Too many credentials in one import"),
+}).superRefine((value, ctx) => {
+  const seen = new Set<string>();
+
+  for (const [index, credential] of value.bulkCredentials.entries()) {
+    const normalizedEmail = credential.email.trim().toLowerCase();
+    if (seen.has(normalizedEmail)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["bulkCredentials", index, "email"],
+        message: "Duplicate email in bulk import payload",
+      });
+      return;
+    }
+    seen.add(normalizedEmail);
+  }
+});
+
+export const ImportOAuthCredentialRequestSchema = z.union([
+  ImportOAuthCredentialSchema,
+  BulkImportOAuthCredentialSchema,
+]);
+
 export type ImportOAuthCredentialInput = z.infer<typeof ImportOAuthCredentialSchema>;
+export type CodexBulkCredentialInput = z.infer<typeof CodexBulkCredentialSchema>;
+export type BulkImportOAuthCredentialInput = z.infer<typeof BulkImportOAuthCredentialSchema>;
