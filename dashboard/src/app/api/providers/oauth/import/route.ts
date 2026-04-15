@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
 import { validateOrigin } from "@/lib/auth/origin";
 import { checkRateLimitWithPreset } from "@/lib/auth/rate-limit";
-import { importOAuthCredential } from "@/lib/providers/dual-write";
+import { importBulkCodexOAuthCredentials, importOAuthCredential } from "@/lib/providers/dual-write";
 import { OAUTH_PROVIDER, type OAuthProvider } from "@/lib/providers/constants";
-import { ImportOAuthCredentialSchema } from "@/lib/validation/schemas";
+import { ImportOAuthCredentialRequestSchema } from "@/lib/validation/schemas";
 import { ERROR_CODE, Errors, apiError } from "@/lib/errors";
 import { AUDIT_ACTION, extractIpAddress, logAuditAsync } from "@/lib/audit";
 
@@ -36,12 +36,12 @@ export async function POST(request: NextRequest) {
       return Errors.validation("Invalid JSON request body");
     }
 
-    const parsed = ImportOAuthCredentialSchema.safeParse(rawBody);
+    const parsed = ImportOAuthCredentialRequestSchema.safeParse(rawBody);
     if (!parsed.success) {
       return Errors.zodValidation(parsed.error.issues);
     }
 
-    const { provider, fileName, fileContent } = parsed.data;
+    const { provider } = parsed.data;
 
     if (!isValidOAuthProvider(provider)) {
       return apiError(
@@ -50,6 +50,31 @@ export async function POST(request: NextRequest) {
         400
       );
     }
+
+    if ("bulkCredentials" in parsed.data) {
+      if (provider !== OAUTH_PROVIDER.CODEX) {
+        return Errors.validation("Bulk import is only supported for Codex");
+      }
+
+      const result = await importBulkCodexOAuthCredentials(session.userId, parsed.data.bulkCredentials);
+
+      logAuditAsync({
+        userId: session.userId,
+        action: AUDIT_ACTION.OAUTH_CREDENTIAL_IMPORTED,
+        target: provider,
+        metadata: {
+          bulk: true,
+          total: result.summary.total,
+          successCount: result.summary.successCount,
+          failureCount: result.summary.failureCount,
+        },
+        ipAddress: extractIpAddress(request),
+      });
+
+      return NextResponse.json({ data: result }, { status: 207 });
+    }
+
+    const { fileName, fileContent } = parsed.data;
 
     // Validate credential JSON structure
     try {

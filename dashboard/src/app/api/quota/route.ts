@@ -4,6 +4,7 @@ import { verifySession } from "@/lib/auth/session";
 import { logger } from "@/lib/logger";
 import { quotaCache, CACHE_TTL } from "@/lib/cache";
 import { Errors } from "@/lib/errors";
+import { mapWithConcurrency } from "@/lib/async-pool";
 import {
   ANTIGRAVITY_QUOTA_ENDPOINTS,
   enrichModelFirstGroup,
@@ -12,11 +13,14 @@ import {
   type QuotaGroup,
   type QuotaResponse,
 } from "@/lib/model-first-monitoring";
+import { inferOAuthProviderFromIdentifiers } from "@/lib/providers/provider-inference";
 
 const CLIPROXYAPI_MANAGEMENT_URL =
   process.env.CLIPROXYAPI_MANAGEMENT_URL ||
   "http://cliproxyapi:8317/v0/management";
 const MANAGEMENT_API_KEY = process.env.MANAGEMENT_API_KEY;
+const QUOTA_HIGH_VOLUME_THRESHOLD = 25;
+const QUOTA_HIGH_VOLUME_CONCURRENCY = 8;
 
 interface AuthFile {
   auth_index: string | number;
@@ -61,21 +65,7 @@ function isMeaningfulDisplayValue(value: string | undefined): value is string {
 }
 
 function inferProviderFromAuthFile(account: AuthFile): string | null {
-  const candidates = [account.id, account.name, account.path, account.label]
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    .map((value) => value.toLowerCase());
-
-  for (const candidate of candidates) {
-    if (candidate.includes("claude-")) return "claude";
-    if (candidate.includes("codex-")) return "codex";
-    if (candidate.includes("gemini-cli") || candidate.includes("gemini-")) return "gemini-cli";
-    if (candidate.includes("antigravity-")) return "antigravity";
-    if (candidate.includes("kimi-")) return "kimi";
-    if (candidate.includes("github-copilot") || candidate.includes("copilot-")) return "copilot";
-    if (candidate.includes("github-")) return "github";
-  }
-
-  return null;
+  return inferOAuthProviderFromIdentifiers(account.id, account.name, account.path, account.label);
 }
 
 interface ApiCallResponse {
@@ -1248,42 +1238,160 @@ export async function GET(request: NextRequest) {
       (file) => !file.disabled && file.status !== "disabled"
     );
 
-    const quotaPromises: Promise<QuotaAccount>[] = activeAccounts.map(async (account): Promise<QuotaAccount> => {
-      const authIndex = String(account.auth_index);
-      const displayEmail =
-        isMeaningfulDisplayValue(account.email)
-          ? account.email.trim()
-          : isMeaningfulDisplayValue(account.label)
-            ? account.label.trim()
-            : isMeaningfulDisplayValue(account.name)
-              ? account.name.trim()
-              : isMeaningfulDisplayValue(account.id)
-                ? account.id.trim()
-              : `${account.provider}-${authIndex}`;
+    const quotaCheckLimit =
+      activeAccounts.length >= QUOTA_HIGH_VOLUME_THRESHOLD
+        ? QUOTA_HIGH_VOLUME_CONCURRENCY
+        : activeAccounts.length;
 
-      const declaredProviderNorm = account.provider.toLowerCase();
-      const inferredProvider =
-        declaredProviderNorm === "unknown" ? inferProviderFromAuthFile(account) : null;
-      const providerNorm = inferredProvider ?? declaredProviderNorm;
-      const providerForResponse = inferredProvider ?? account.provider;
+    const accounts = await mapWithConcurrency(
+      activeAccounts,
+      quotaCheckLimit,
+      async (account): Promise<QuotaAccount> => {
+        const authIndex = String(account.auth_index);
+        const displayEmail =
+          isMeaningfulDisplayValue(account.email)
+            ? account.email.trim()
+            : isMeaningfulDisplayValue(account.label)
+              ? account.label.trim()
+              : isMeaningfulDisplayValue(account.name)
+                ? account.name.trim()
+                : isMeaningfulDisplayValue(account.id)
+                  ? account.id.trim()
+                  : `${account.provider}-${authIndex}`;
 
-      if (providerNorm === "claude") {
-        const result = await fetchClaudeQuota(authIndex);
+        try {
+          const declaredProviderNorm = account.provider.toLowerCase();
+          const inferredProvider =
+            declaredProviderNorm === "unknown" ? inferProviderFromAuthFile(account) : null;
+          const providerNorm = inferredProvider ?? declaredProviderNorm;
+          const providerForResponse = inferredProvider ?? account.provider;
 
-        if ("error" in result) {
-          const normalizedError = result.error.toLowerCase();
-          const needsReauth =
-            normalizedError.includes("401") ||
-            normalizedError.includes("invalid bearer token") ||
-            normalizedError.includes("invalid authorization");
+          if (providerNorm === "claude") {
+            const result = await fetchClaudeQuota(authIndex);
 
-          if (needsReauth) {
+            if ("error" in result) {
+              const normalizedError = result.error.toLowerCase();
+              const needsReauth =
+                normalizedError.includes("401") ||
+                normalizedError.includes("invalid bearer token") ||
+                normalizedError.includes("invalid authorization");
+
+              if (needsReauth) {
+                return {
+                  auth_index: authIndex,
+                  provider: providerForResponse,
+                  email: displayEmail,
+                  supported: true,
+                  error: "Claude OAuth token needs re-authentication (provider returned 401)",
+                };
+              }
+
+              return {
+                auth_index: authIndex,
+                provider: providerForResponse,
+                email: displayEmail,
+                supported: true,
+                error: result.error,
+              };
+            }
+
             return {
               auth_index: authIndex,
               provider: providerForResponse,
               email: displayEmail,
               supported: true,
-              error: "Claude OAuth token needs re-authentication (provider returned 401)",
+              groups: result,
+            };
+          }
+
+          if (isModelFirstProvider(providerNorm)) {
+            const result = await fetchAntigravityQuota(authIndex);
+
+            if ("error" in result) {
+              return {
+                auth_index: authIndex,
+                provider: providerForResponse,
+                email: displayEmail,
+                supported: true,
+                error: result.error,
+              };
+            }
+
+            return {
+              auth_index: authIndex,
+              provider: providerForResponse,
+              email: displayEmail,
+              supported: true,
+              monitorMode: "model-first",
+              snapshotFetchedAt: result.snapshotFetchedAt,
+              snapshotSource: result.snapshotSource,
+              groups: result.groups,
+            };
+          }
+
+          if (providerNorm === "codex") {
+            const result = await fetchCodexQuota(authIndex);
+
+            if ("error" in result) {
+              return {
+                auth_index: authIndex,
+                provider: providerForResponse,
+                email: displayEmail,
+                supported: true,
+                error: result.error,
+              };
+            }
+
+            return {
+              auth_index: authIndex,
+              provider: providerForResponse,
+              email: displayEmail,
+              supported: true,
+              groups: result,
+            };
+          }
+
+          if (providerNorm === "kimi") {
+            const result = await fetchKimiQuota(authIndex);
+
+            if ("error" in result) {
+              return {
+                auth_index: authIndex,
+                provider: providerForResponse,
+                email: displayEmail,
+                supported: true,
+                error: result.error,
+              };
+            }
+
+            return {
+              auth_index: authIndex,
+              provider: providerForResponse,
+              email: displayEmail,
+              supported: true,
+              groups: result,
+            };
+          }
+
+          if (providerNorm === "github" || providerNorm === "github-copilot" || providerNorm === "copilot") {
+            const result = await fetchCopilotQuota(authIndex);
+
+            if ("error" in result) {
+              return {
+                auth_index: authIndex,
+                provider: providerForResponse,
+                email: displayEmail,
+                supported: true,
+                error: result.error,
+              };
+            }
+
+            return {
+              auth_index: authIndex,
+              provider: providerForResponse,
+              email: displayEmail,
+              supported: true,
+              groups: result,
             };
           }
 
@@ -1291,137 +1399,19 @@ export async function GET(request: NextRequest) {
             auth_index: authIndex,
             provider: providerForResponse,
             email: displayEmail,
-            supported: true,
-            error: result.error,
+            supported: false,
           };
-        }
-
-        return {
-          auth_index: authIndex,
-          provider: providerForResponse,
-          email: displayEmail,
-          supported: true,
-          groups: result,
-        };
-      }
-
-      if (isModelFirstProvider(providerNorm)) {
-        const result = await fetchAntigravityQuota(authIndex);
-        
-        if ("error" in result) {
+        } catch (error) {
           return {
             auth_index: authIndex,
-            provider: providerForResponse,
+            provider: account.provider ?? "unknown",
             email: displayEmail,
             supported: true,
-            error: result.error,
+            error: error instanceof Error ? error.message : "Promise rejected",
           };
         }
-
-        return {
-          auth_index: authIndex,
-          provider: providerForResponse,
-          email: displayEmail,
-          supported: true,
-          monitorMode: "model-first",
-          snapshotFetchedAt: result.snapshotFetchedAt,
-          snapshotSource: result.snapshotSource,
-          groups: result.groups,
-        };
       }
-
-      if (providerNorm === "codex") {
-        const result = await fetchCodexQuota(authIndex);
-        
-        if ("error" in result) {
-          return {
-            auth_index: authIndex,
-            provider: providerForResponse,
-            email: displayEmail,
-            supported: true,
-            error: result.error,
-          };
-        }
-
-        return {
-          auth_index: authIndex,
-          provider: providerForResponse,
-          email: displayEmail,
-          supported: true,
-          groups: result,
-        };
-      }
-
-      if (providerNorm === "kimi") {
-        const result = await fetchKimiQuota(authIndex);
-
-        if ("error" in result) {
-          return {
-            auth_index: authIndex,
-            provider: providerForResponse,
-            email: displayEmail,
-            supported: true,
-            error: result.error,
-          };
-        }
-
-        return {
-          auth_index: authIndex,
-          provider: providerForResponse,
-          email: displayEmail,
-          supported: true,
-          groups: result,
-        };
-      }
-
-
-      if (providerNorm === "github" || providerNorm === "github-copilot" || providerNorm === "copilot") {
-        const result = await fetchCopilotQuota(authIndex);
-
-        if ("error" in result) {
-          return {
-            auth_index: authIndex,
-            provider: providerForResponse,
-            email: displayEmail,
-            supported: true,
-            error: result.error,
-          };
-        }
-
-        return {
-          auth_index: authIndex,
-          provider: providerForResponse,
-          email: displayEmail,
-          supported: true,
-          groups: result,
-        };
-      }
-
-      return {
-        auth_index: authIndex,
-        provider: providerForResponse,
-        email: displayEmail,
-        supported: false,
-      };
-    });
-
-    const results = await Promise.allSettled(quotaPromises);
-
-    const accounts: QuotaAccount[] = results.map((result) => {
-      if (result.status === "fulfilled") {
-        return result.value;
-      }
-
-      return {
-        auth_index: "unknown",
-        provider: "unknown",
-        email: "unknown",
-        supported: true,
-        error: result.reason instanceof Error
-          ? result.reason.message
-          : "Promise rejected",
-      };
-    });
+    );
 
     const response: QuotaResponse = {
       accounts,

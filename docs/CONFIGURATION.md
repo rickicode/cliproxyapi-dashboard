@@ -78,6 +78,49 @@ Dashboard-specific settings are managed through the Settings page in the UI:
 - Config Sync token management
 - Theme preferences
 
+## Provider Import Notes
+
+OAuth providers are normally connected from the Dashboard on the Providers page. Manual JSON import is also supported for credential-based provider onboarding.
+
+### Codex Bulk Import
+
+Codex supports bulk import from a JSON array in the Dashboard UI.
+
+Path:
+
+1. Open `Dashboard -> Providers`
+2. In the OAuth section, choose `Codex`
+3. Click `Import JSON`
+4. Paste or upload a JSON array
+
+Required format:
+
+```json
+[
+  {
+    "email": "user1@example.com",
+    "access_token": "...",
+    "refresh_token": "...",
+    "id_token": "..."
+  },
+  {
+    "email": "user2@example.com",
+    "access_token": "...",
+    "refresh_token": "...",
+    "id_token": "..."
+  }
+]
+```
+
+Notes:
+
+- Each item must be a JSON object.
+- Each item must include `email`.
+- Each item must include at least one credential field in addition to `email`.
+- The dashboard stores each imported auth file internally as `codex_[email].json`.
+- Characters unsafe for file names are sanitized internally, but the original `email` remains the user-facing identifier in the import results.
+- Import results are reported per email, so partial success is possible in one bulk upload.
+
 ## Config Sync
 
 The dashboard can automatically sync your OpenCode configurations to your local machine using the companion plugin.

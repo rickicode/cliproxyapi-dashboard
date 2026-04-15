@@ -559,4 +559,59 @@ describe("GET /api/quota - imported provider normalization", () => {
     expect(account.groups).toBeDefined();
     expect(account.groups.length).toBeGreaterThan(0);
   });
+
+  it("infers codex provider from codex_user@example.com.json when provider is unknown", async () => {
+    const authFilesResponse = {
+      files: [
+        {
+          auth_index: 0,
+          provider: "unknown",
+          id: "codex_user@example.com.json",
+          name: "codex_user@example.com.json",
+          email: "unknown",
+          disabled: false,
+          status: "active",
+        },
+      ],
+    };
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 200,
+            body: JSON.stringify({
+              rate_limit: {
+                primary_window: {
+                  limit_window_seconds: 300,
+                  used_percent: 50,
+                  reset_at: 1774039200,
+                },
+              },
+            }),
+          }),
+        body: { cancel: vi.fn() },
+      });
+
+    const { GET } = await import("./route");
+
+    const request = new Request("http://localhost/api/quota", {
+      headers: { cookie: "session=test" },
+    });
+    const response = await GET(request as any);
+    const data = await response.json();
+
+    expect(data.accounts).toHaveLength(1);
+    const account = data.accounts[0];
+    expect(account.provider).toBe("codex");
+    expect(account.supported).toBe(true);
+    expect(account.groups).toBeDefined();
+    expect(account.groups.length).toBeGreaterThan(0);
+  });
 });
