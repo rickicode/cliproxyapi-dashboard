@@ -24,7 +24,7 @@ cd cliproxyapi-dashboard/dashboard
 This starts:
 - **PostgreSQL** on `localhost:5433`
 - **CLIProxyAPI** on `localhost:28317`
-- **Dashboard** on `localhost:3000`
+- **Dashboard** on `localhost:8318`
 
 To stop: `.\dev-local.ps1 -Down` / To reset: `.\dev-local.ps1 -Reset`
 

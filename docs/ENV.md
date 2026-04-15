@@ -15,7 +15,7 @@
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker socket path for container management |
-| `DASHBOARD_URL` | `http://localhost:3000` | Dashboard public URL |
+| `DASHBOARD_URL` | `http://localhost:8318` | Dashboard public URL |
 | `API_URL` | — | CLIProxyAPI public URL |
 | `POSTGRES_PASSWORD` | — | PostgreSQL password (used by docker-compose) |
 | `NODE_ENV` | `production` | Node environment (`development` / `production`) |

@@ -264,7 +264,7 @@ main() {
     wait_for_health
 
     log_success "CLIProxyAPI Dashboard is running!"
-    echo "  Dashboard: http://localhost:3000"
+    echo "  Dashboard: http://localhost:8318"
     echo "  API:       http://localhost:11451"
     echo ""
     echo "  Stop:  ./setup-local.sh --down"

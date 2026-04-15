@@ -48,7 +48,7 @@ cd cliproxyapi-dashboard
 # .\setup-local.ps1       # Windows
 ```
 
-Open **http://localhost:3000** → create admin account → done.
+Open **http://localhost:8318** → create admin account → done.
 
 > **Server deployment**: See the full [Installation Guide](docs/INSTALLATION.md).
 
@@ -186,7 +186,7 @@ npx prisma migrate dev
 npm run dev
 ```
 
-Dashboard at `http://localhost:3000`.
+Dashboard at `http://localhost:8318`.
 
 ### UI-Only Mode (no database)
 

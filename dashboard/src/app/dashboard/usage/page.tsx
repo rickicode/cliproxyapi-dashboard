@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -131,9 +131,9 @@ function getDateRange(period: DateFilter, customFrom?: string, customTo?: string
 }
 
 
-function getStatusColor(isoString: string): string {
+function getStatusColor(isoString: string, now: number): string {
   if (!isoString) return "bg-red-500/100";
-  const diff = Date.now() - new Date(isoString).getTime();
+  const diff = now - new Date(isoString).getTime();
   const minutes = Math.floor(diff / 60000);
   if (minutes < 10) return "bg-emerald-500/100";
   if (minutes < 30) return "bg-yellow-500/100";
@@ -147,17 +147,18 @@ function formatLatencyValue(value: number): string {
 export default function UsagePage() {
   const t = useTranslations("usage");
   const tc = useTranslations("common");
+  const [relativeTimeNow, setRelativeTimeNow] = useState<number | null>(null);
 
-  function getRelativeTime(isoString: string): string {
+  const getRelativeTime = useCallback((isoString: string, now: number): string => {
     if (!isoString) return t('never');
-    const diff = Date.now() - new Date(isoString).getTime();
+    const diff = now - new Date(isoString).getTime();
     const minutes = Math.floor(diff / 60000);
     if (minutes < 1) return t("justNow");
     if (minutes < 60) return t("minutesAgo", { count: minutes });
     const hours = Math.floor(minutes / 60);
     if (hours < 24) return t("hoursAgo", { count: hours });
     return t("daysAgo", { count: Math.floor(hours / 24) });
-  }
+  }, [t]);
   const [usageData, setUsageData] = useState<UsageData | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -190,6 +191,7 @@ export default function UsagePage() {
         if (abortController.signal.aborted) return;
         setUsageData(json.data);
         setIsAdmin(json.isAdmin);
+        setRelativeTimeNow(Date.now());
         setLoading(false);
       } catch {
         if (abortController.signal.aborted) return;
@@ -214,7 +216,7 @@ export default function UsagePage() {
         clearInterval(intervalRef.current);
       }
     };
-  }, [activeFilter, customFrom, customTo, showToast]);
+  }, [activeFilter, customFrom, customTo, showToast, t]);
 
   const handleFilterChange = (filter: DateFilter) => {
     setActiveFilter(filter);
@@ -251,6 +253,7 @@ export default function UsagePage() {
       const json: UsageResponse = await res.json();
       setUsageData(json.data);
       setIsAdmin(json.isAdmin);
+      setRelativeTimeNow(Date.now());
       setLoading(false);
     } catch {
       showToast(t("toastNetworkError"), "error");
@@ -260,8 +263,12 @@ export default function UsagePage() {
 
   const hasInputOutputBreakdown = usageData && (usageData.totals.inputTokens > 0 || usageData.totals.outputTokens > 0);
   const hasLatencyBreakdown = (usageData?.latencySummary?.sampleCount ?? 0) > 0;
-  const collectorStatusColor = usageData ? getStatusColor(usageData.collectorStatus.lastCollectedAt) : "bg-gray-500";
-  const collectorTimeAgo = usageData ? getRelativeTime(usageData.collectorStatus.lastCollectedAt) : tc('unknown');
+  const collectorStatusColor = usageData && relativeTimeNow !== null
+    ? getStatusColor(usageData.collectorStatus.lastCollectedAt, relativeTimeNow)
+    : "bg-gray-500";
+  const collectorTimeAgo = usageData && relativeTimeNow !== null
+    ? getRelativeTime(usageData.collectorStatus.lastCollectedAt, relativeTimeNow)
+    : tc('unknown');
 
   return (
     <div className="space-y-4">
