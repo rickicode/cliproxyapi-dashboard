@@ -125,7 +125,7 @@ cd cliproxyapi-dashboard
 
 ![Local Setup Windows](code-snippets/local-setup-windows.png)
 
-Dashboard runs on `localhost:3000`, CLIProxyAPIPlus proxy on `localhost:11451`.
+Dashboard runs on `localhost:8318`, CLIProxyAPIPlus proxy on `localhost:11451`.
 
 ## Manual Installation
 

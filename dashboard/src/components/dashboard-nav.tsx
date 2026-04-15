@@ -117,6 +117,16 @@ function IconLogs({ className }: { className?: string }) {
   );
 }
 
+function IconArchive({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <path d="M5 8v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8" />
+      <line x1="10" y1="12" x2="14" y2="12" />
+    </svg>
+  );
+}
+
 function CollapseIcon({ collapsed }: { collapsed: boolean }) {
   return (
     <svg
@@ -148,6 +158,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/config", labelKey: "config", icon: IconFileCode, adminOnly: true, section: "admin" },
   { href: "/dashboard/admin/users", labelKey: "users", icon: IconUsers, adminOnly: true, section: "admin" },
   { href: "/dashboard/admin/logs", labelKey: "logs", icon: IconLogs, adminOnly: true, section: "admin" },
+  { href: "/dashboard/admin/backup", labelKey: "backupRestore", icon: IconArchive, adminOnly: true, section: "admin" },
 ] as const;
 
 export function DashboardNav() {

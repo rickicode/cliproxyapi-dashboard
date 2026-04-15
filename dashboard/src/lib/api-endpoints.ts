@@ -13,6 +13,8 @@ export const API_ENDPOINTS = {
     DEPLOY: "/api/admin/deploy",
     USERS: "/api/admin/users",
     SETTINGS: "/api/admin/settings",
+    BACKUP: "/api/admin/backup",
+    RESTORE: "/api/admin/restore",
     LOGS: "/api/admin/logs",
     TELEGRAM: "/api/admin/telegram",
     REVOKE_SESSIONS: "/api/admin/revoke-sessions",

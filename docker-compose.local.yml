@@ -121,7 +121,7 @@ services:
       - frontend
       - backend
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:8318:3000"
     environment:
       DATABASE_URL: postgresql://cliproxyapi:${POSTGRES_PASSWORD}@postgres:5432/cliproxyapi
       CLIPROXYAPI_MANAGEMENT_URL: http://cliproxyapi:8317/v0/management
@@ -129,7 +129,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       NODE_ENV: production
       DOCKER_HOST: tcp://docker-proxy:2375
-      DASHBOARD_URL: http://localhost:3000
+      DASHBOARD_URL: http://localhost:8318
       API_URL: http://localhost:8317
     depends_on:
       postgres:

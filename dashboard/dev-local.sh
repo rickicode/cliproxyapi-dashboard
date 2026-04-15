@@ -250,7 +250,7 @@ start_nextjs() {
     log_info "Starting Next.js development server..."
     echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}  Dashboard:  http://localhost:3000${NC}"
+    echo -e "${GREEN}  Dashboard:  http://localhost:8318${NC}"
     echo -e "${BLUE}  PostgreSQL: localhost:5433${NC}"
     echo -e "${BLUE}  API:        http://localhost:28317${NC}"
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -258,7 +258,7 @@ start_nextjs() {
     echo -e "${YELLOW}Press Ctrl+C to stop${NC}"
     echo ""
     
-    npm run dev
+    npm run dev -- --port 8318
 }
 
 # Function to stop containers

@@ -1,4 +1,40 @@
+import type { NextRequest } from "next/server";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+interface QuotaTestModel {
+  id: string;
+  displayName?: string;
+  remainingFraction?: number;
+}
+
+interface QuotaTestGroup {
+  monitorMode?: string;
+  nextWindowResetAt?: string;
+  p50RemainingFraction?: number;
+  models: QuotaTestModel[];
+}
+
+interface QuotaTestAccount {
+  provider: string;
+  supported: boolean;
+  email?: string;
+  error?: string;
+  monitorMode?: string;
+  snapshotFetchedAt?: string;
+  snapshotSource?: string;
+  groups: QuotaTestGroup[];
+}
+
+interface QuotaTestResponse {
+  accounts: QuotaTestAccount[];
+  generatedAt?: string;
+}
+
+function createNextRequest(): NextRequest {
+  return new Request("http://localhost/api/quota", {
+    headers: { cookie: "session=test" },
+  }) as unknown as NextRequest;
+}
 
 vi.mock("@/lib/auth/session", () => ({
   verifySession: vi.fn(() => ({ userId: "test-user" })),
@@ -85,11 +121,8 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
 
     const { GET } = await import("./route");
 
-    const request = new Request("http://localhost/api/quota", {
-      headers: { cookie: "session=test" },
-    });
-    const response = await GET(request as any);
-    const data = await response.json();
+    const response = await GET(createNextRequest());
+    const data = (await response.json()) as QuotaTestResponse;
 
     expect(data.accounts).toHaveLength(1);
 
@@ -139,11 +172,8 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
 
     const { GET } = await import("./route");
 
-    const request = new Request("http://localhost/api/quota", {
-      headers: { cookie: "session=test" },
-    });
-    const response = await GET(request as any);
-    const data = await response.json();
+    const response = await GET(createNextRequest());
+    const data = (await response.json()) as QuotaTestResponse;
 
     const account = data.accounts[0];
     expect(account.provider).toBe("gemini-cli");
@@ -201,11 +231,8 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
 
     const { GET } = await import("./route");
 
-    const request = new Request("http://localhost/api/quota", {
-      headers: { cookie: "session=test" },
-    });
-    const response = await GET(request as any);
-    const data = await response.json();
+    const response = await GET(createNextRequest());
+    const data = (await response.json()) as QuotaTestResponse;
 
     const account = data.accounts[0];
     expect(account.supported).toBe(true);
@@ -280,11 +307,8 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
 
     const { GET } = await import("./route");
 
-    const request = new Request("http://localhost/api/quota", {
-      headers: { cookie: "session=test" },
-    });
-    const response = await GET(request as any);
-    const data = await response.json();
+    const response = await GET(createNextRequest());
+    const data = (await response.json()) as QuotaTestResponse;
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(data.accounts).toHaveLength(1);
@@ -360,11 +384,8 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
 
     const { GET } = await import("./route");
 
-    const request = new Request("http://localhost/api/quota", {
-      headers: { cookie: "session=test" },
-    });
-    const response = await GET(request as any);
-    const data = await response.json();
+    const response = await GET(createNextRequest());
+    const data = (await response.json()) as QuotaTestResponse;
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
@@ -374,9 +395,9 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
     expect(fetchQuotaCallBody.data).toBe("{\"project\":\"confident-arc-98xjk\"}");
 
     const account = data.accounts[0];
-    const models = account.groups.flatMap((group: any) => group.models);
-    const claudeModel = models.find((model: any) => model.id === "claude-opus-4-6-thinking");
-    const flashModel = models.find((model: any) => model.id === "gemini-3-flash");
+    const models = account.groups.flatMap((group) => group.models);
+    const claudeModel = models.find((model) => model.id === "claude-opus-4-6-thinking");
+    const flashModel = models.find((model) => model.id === "gemini-3-flash");
 
     expect(claudeModel?.remainingFraction).toBe(0);
     expect(flashModel?.remainingFraction).toBe(0.8);
@@ -427,11 +448,8 @@ describe("GET /api/quota - imported provider normalization", () => {
 
     const { GET } = await import("./route");
 
-    const request = new Request("http://localhost/api/quota", {
-      headers: { cookie: "session=test" },
-    });
-    const response = await GET(request as any);
-    const data = await response.json();
+    const response = await GET(createNextRequest());
+    const data = (await response.json()) as QuotaTestResponse;
 
     expect(data.accounts).toHaveLength(1);
 
@@ -462,11 +480,8 @@ describe("GET /api/quota - imported provider normalization", () => {
 
     const { GET } = await import("./route");
 
-    const request = new Request("http://localhost/api/quota", {
-      headers: { cookie: "session=test" },
-    });
-    const response = await GET(request as any);
-    const data = await response.json();
+    const response = await GET(createNextRequest());
+    const data = (await response.json()) as QuotaTestResponse;
 
     expect(data.accounts).toHaveLength(1);
 
@@ -496,11 +511,8 @@ describe("GET /api/quota - imported provider normalization", () => {
 
     const { GET } = await import("./route");
 
-    const request = new Request("http://localhost/api/quota", {
-      headers: { cookie: "session=test" },
-    });
-    const response = await GET(request as any);
-    const data = await response.json();
+    const response = await GET(createNextRequest());
+    const data = (await response.json()) as QuotaTestResponse;
 
     expect(data.accounts).toHaveLength(1);
 
@@ -544,11 +556,8 @@ describe("GET /api/quota - imported provider normalization", () => {
 
     const { GET } = await import("./route");
 
-    const request = new Request("http://localhost/api/quota", {
-      headers: { cookie: "session=test" },
-    });
-    const response = await GET(request as any);
-    const data = await response.json();
+    const response = await GET(createNextRequest());
+    const data = (await response.json()) as QuotaTestResponse;
 
     expect(data.accounts).toHaveLength(1);
 
@@ -601,11 +610,8 @@ describe("GET /api/quota - imported provider normalization", () => {
 
     const { GET } = await import("./route");
 
-    const request = new Request("http://localhost/api/quota", {
-      headers: { cookie: "session=test" },
-    });
-    const response = await GET(request as any);
-    const data = await response.json();
+    const response = await GET(createNextRequest());
+    const data = (await response.json()) as QuotaTestResponse;
 
     expect(data.accounts).toHaveLength(1);
     const account = data.accounts[0];
