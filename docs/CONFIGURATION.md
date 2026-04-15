@@ -35,7 +35,9 @@ Configuration is managed through `infrastructure/.env`.
 | `DOCKER_HOST` | No | Docker socket proxy URL (for container management) | `tcp://docker-proxy:2375` |
 | `GITHUB_REPO` | No | GitHub repo for update checks | `itsmylife44/cliproxyapi-dashboard` |
 | `SYNC_TOKEN_MAX_AGE_DAYS` | No | Config sync token expiration in days | `90` |
-| `COLLECTOR_API_KEY` | No | API key for external usage collection | — |
+| `COLLECTOR_API_KEY` | No | Optional bearer token for external or token-authenticated `POST /api/usage/collect` calls; not required by the internal scheduler | — |
+
+Periodic usage collection is performed by the dashboard application's internal scheduler, which replaces the old installer-managed cron entry. You only need `COLLECTOR_API_KEY` when triggering `POST /api/usage/collect` from an external system. Those custom external calls remain supported and are not removed by installer cleanup.
 
 ### Perplexity Sidecar
 

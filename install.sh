@@ -714,29 +714,64 @@ if [ "$BACKUP_INTERVAL" != "none" ]; then
 fi
 
 # ============================================================================
-# USAGE COLLECTOR CRON JOB
+# USAGE COLLECTOR SCHEDULER
 # ============================================================================
 
-log_info "=== Usage Collector Cron Job ==="
+log_info "=== Usage Collector Scheduler ==="
 echo ""
 
-log_info "Setting up usage data collection (every 5 minutes)..."
-log_info "This prevents data loss when the proxy restarts."
+log_info "Periodic usage collection is now handled by the dashboard app itself."
+log_info "Checking for a legacy installer-managed usage collector cron entry to remove..."
 
-if [ $EXTERNAL_PROXY -eq 1 ]; then
-    COLLECTOR_URL="http://127.0.0.1:8318"
+if crontab -l >/dev/null 2>&1; then
+    CURRENT_CRONTAB=$(mktemp)
+    CLEANED_CRONTAB=$(mktemp)
+    trap 'rm -f "$CURRENT_CRONTAB" "$CLEANED_CRONTAB"' EXIT
+
+    crontab -l > "$CURRENT_CRONTAB"
+
+    if grep -q "# CLIProxyAPI usage collector (every 5 minutes)" "$CURRENT_CRONTAB"; then
+        python3 - "$CURRENT_CRONTAB" "$CLEANED_CRONTAB" <<'PY'
+import sys
+
+source_path, dest_path = sys.argv[1], sys.argv[2]
+legacy_comment = "# CLIProxyAPI usage collector (every 5 minutes)"
+
+with open(source_path, "r", encoding="utf-8") as source_file:
+    lines = source_file.readlines()
+
+cleaned_lines = []
+skip_next = False
+
+for line in lines:
+    if skip_next:
+        skip_next = False
+        if "/api/usage/collect" in line:
+            continue
+        cleaned_lines.append(line)
+        continue
+
+    if line.rstrip("\n") == legacy_comment:
+        skip_next = True
+        continue
+
+    cleaned_lines.append(line)
+
+with open(dest_path, "w", encoding="utf-8") as dest_file:
+    dest_file.writelines(cleaned_lines)
+PY
+
+        crontab "$CLEANED_CRONTAB"
+
+        log_success "Removed only the legacy installer-managed usage collector cron entry; periodic collection is handled internally by the dashboard app"
+    else
+        log_info "No legacy installer-managed usage collector cron entry found; custom external POST /api/usage/collect calls remain supported"
+    fi
+
+    rm -f "$CURRENT_CRONTAB" "$CLEANED_CRONTAB"
+    trap - EXIT
 else
-    COLLECTOR_URL="https://${DASHBOARD_SUBDOMAIN}.${DOMAIN}"
-fi
-
-COLLECTOR_CRON_SCHEDULE="*/5 * * * *"
-COLLECTOR_CRON_CMD="curl -sf -X POST ${COLLECTOR_URL}/api/usage/collect -H 'Authorization: Bearer ${COLLECTOR_API_KEY}' -o /dev/null"
-
-if crontab -l 2>/dev/null | grep -q "/api/usage/collect"; then
-    log_warning "Usage collector cron job already exists"
-else
-    (crontab -l 2>/dev/null || true; echo "# CLIProxyAPI usage collector (every 5 minutes)"; echo "$COLLECTOR_CRON_SCHEDULE $COLLECTOR_CRON_CMD") | crontab -
-    log_success "Usage collector cron job installed (every 5 minutes)"
+    log_info "No user crontab found; no legacy installer-managed usage collector cron entry needed cleanup"
 fi
 
 echo ""

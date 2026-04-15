@@ -64,6 +64,7 @@ The installer will:
 6. Create `infrastructure/.env` with all required configuration
 7. Create a systemd service for automatic startup on boot
 8. Optionally set up automated daily or weekly backups
+9. Remove only the legacy installer-managed `/api/usage/collect` cron entry/comment because periodic usage collection is now handled internally by the dashboard app
 
 ### Post-Installation
 
@@ -79,6 +80,8 @@ docker compose logs -f
 Access the dashboard at:
 - **Dashboard**: `https://dashboard.yourdomain.com`
 - **API**: `https://api.yourdomain.com`
+
+> **Usage collection**: You do not need to configure an OS cron job for periodic usage collection. The dashboard app owns this scheduling internally and continues collecting usage data without an installer-managed cron dependency. If you run your own external automation against `POST /api/usage/collect`, that remains supported and the installer cleanup does not remove it.
 
 ### Initial Setup Flow
 
@@ -262,6 +265,8 @@ Replace `example.com` with your actual domain.
 ### 5. Configure CLIProxyAPIPlus
 
 API keys and AI providers can be configured through the Dashboard UI after first login. Alternatively, you can edit `infrastructure/config/config.yaml` directly.
+
+Periodic usage collection does not require the old installer-managed cron setup. The dashboard app now runs the collector on its own, while `POST /api/usage/collect` remains available for manual or external integrations when needed. The installer only cleans up the legacy installer-managed cron entry/comment and leaves custom external automations intact.
 
 If you need to onboard many Codex accounts at once, the Dashboard `Providers` page supports bulk JSON import for Codex OAuth credentials. The input format is a JSON array where each item contains an `email` plus the credential payload fields such as `access_token` and `refresh_token`. See [CONFIGURATION.md](./CONFIGURATION.md#codex-bulk-import) for the exact format.
 

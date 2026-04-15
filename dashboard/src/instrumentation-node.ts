@@ -1,22 +1,38 @@
 /**
  * Node.js-only instrumentation — imported conditionally from instrumentation.ts.
- * Starts a periodic quota alert checker with a configurable interval.
- * Both the check interval and alert cooldown are read from DB settings.
+ * Starts the quota alert scheduler and usage collector scheduler.
+ * The quota check interval and alert cooldown are read from DB settings.
  */
 
 import { runAlertCheck, getCheckIntervalMs } from "@/lib/quota-alerts";
 import { resyncCustomProviders } from "@/lib/providers/resync";
+import { runUsageCollector } from "@/lib/usage/collector";
 import { logger } from "@/lib/logger";
 
 // Idempotency guard for HMR in dev — prevents duplicate intervals
 const globalForScheduler = globalThis as typeof globalThis & {
   __quotaSchedulerRegistered?: boolean;
+  __usageCollectorSchedulerRegistered?: boolean;
 };
+
+const USAGE_COLLECTOR_STARTUP_DELAY_MS = 60_000;
+const DEFAULT_USAGE_COLLECTOR_INTERVAL_MS = 5 * 60 * 1000;
 
 function scheduleTimeout(callback: () => void | Promise<void>, delayMs: number) {
   const timer = setTimeout(callback, delayMs);
   timer.unref?.();
   return timer;
+}
+
+function getNextUsageCollectorRunTime(fromMs: number, firstRunMs: number) {
+  if (fromMs < firstRunMs) {
+    return firstRunMs;
+  }
+
+  const elapsedSinceFirstRunMs = fromMs - firstRunMs;
+  const intervalsElapsed = Math.floor(elapsedSinceFirstRunMs / DEFAULT_USAGE_COLLECTOR_INTERVAL_MS) + 1;
+
+  return firstRunMs + intervalsElapsed * DEFAULT_USAGE_COLLECTOR_INTERVAL_MS;
 }
 
 export function registerNodeInstrumentation() {
@@ -30,11 +46,48 @@ export function registerNodeInstrumentation() {
     startQuotaAlertScheduler();
   }, STARTUP_DELAY_MS);
 
+  startUsageCollectorScheduler();
+
   scheduleTimeout(() => {
     resyncCustomProviders().catch((err) => {
       logger.error({ err }, "Startup custom provider resync failed");
     });
   }, 15_000);
+}
+
+function startUsageCollectorScheduler() {
+  if (globalForScheduler.__usageCollectorSchedulerRegistered) return;
+  globalForScheduler.__usageCollectorSchedulerRegistered = true;
+
+  let isRunning = false;
+
+  const run = async () => {
+    if (isRunning) return;
+    isRunning = true;
+
+    try {
+      await runUsageCollector({ trigger: "scheduler" });
+    } catch (error) {
+      logger.error({ error }, "Usage collector scheduler error");
+    } finally {
+      isRunning = false;
+    }
+  };
+
+  const firstRunMs = Date.now() + USAGE_COLLECTOR_STARTUP_DELAY_MS;
+
+  const scheduleNext = (scheduledStartMs: number) => {
+    const delayMs = Math.max(0, scheduledStartMs - Date.now());
+
+    scheduleTimeout(async () => {
+      await run();
+
+      const nextScheduledStartMs = getNextUsageCollectorRunTime(Date.now(), firstRunMs);
+      scheduleNext(nextScheduledStartMs);
+    }, delayMs);
+  };
+
+  scheduleNext(firstRunMs);
 }
 
 function startQuotaAlertScheduler() {

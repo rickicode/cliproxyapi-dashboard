@@ -59,7 +59,7 @@ GET|POST|PATCH|DELETE /api/config-sharing/subscribe → Prisma ConfigSubscriptio
 GET            /api/quota                → management proxy + aggregation (1156 lines)
 POST           /api/quota/check-alerts   → lib/quota-alerts → lib/telegram
 GET            /api/usage                → Prisma UsageRecord aggregate
-POST           /api/usage/collect        → fetch from proxy → Prisma UsageRecord
+POST           /api/usage/collect        → auth/origin checks → shared usage collector core → Prisma collector state / UsageRecord
 GET            /api/usage/history        → Prisma UsageRecord time series
 
 ## System
@@ -81,3 +81,6 @@ middleware.ts → JWT validation → route protection → session refresh
 - lib/audit.ts: Audit log creation
 - lib/api-endpoints.ts: Centralized URL constants
 - lib/validation/schemas.ts: Zod schemas (v3.25)
+
+## Scheduler Ownership
+- Periodic usage collection is owned by the dashboard app's instrumentation-based internal scheduler, which invokes the shared collector flow without relying on installer-managed OS cron.

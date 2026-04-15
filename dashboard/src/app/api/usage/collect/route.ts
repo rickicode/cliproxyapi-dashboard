@@ -1,212 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/session";
 import { validateOrigin } from "@/lib/auth/origin";
-import { syncKeysToCliProxyApi } from "@/lib/api-keys/sync";
 import { prisma } from "@/lib/db";
-import { logger } from "@/lib/logger";
-import { randomUUID, timingSafeEqual } from "crypto";
-import { Errors } from "@/lib/errors";
+import { timingSafeEqual } from "crypto";
+import { apiError, ERROR_CODE, Errors } from "@/lib/errors";
+import { runUsageCollector, type UsageCollectorFailureReason } from "@/lib/usage/collector";
 
-const CLIPROXYAPI_MANAGEMENT_URL =
-  process.env.CLIPROXYAPI_MANAGEMENT_URL ||
-  "http://cliproxyapi:8317/v0/management";
-const MANAGEMENT_API_KEY = process.env.MANAGEMENT_API_KEY;
 const COLLECTOR_API_KEY = process.env.COLLECTOR_API_KEY;
 
-const BATCH_SIZE = 500;
-const LATENCY_BACKFILL_BATCH_SIZE = 100;
-const COLLECTOR_LEASE_STALE_MS = 15 * 60 * 1000;
-
-function markCollectorError(runId: string, errorMessage: string): Promise<void> {
-  return prisma.collectorState
-    .upsert({
-      where: { id: "singleton" },
-      create: {
-        id: "singleton",
-        lastCollectedAt: new Date(),
-        lastStatus: "error",
-        recordsStored: 0,
-        errorMessage,
-      },
-      update: {
-        lastCollectedAt: new Date(),
-        lastStatus: "error",
-        recordsStored: 0,
-        errorMessage,
-      },
-    })
-    .then(() => {
-      logger.warn({ runId, errorMessage }, "Collector state marked as error");
-    })
-    .catch((stateError) => {
-      logger.error({ err: stateError, runId }, "Failed to mark collector error state");
-    });
+function assertNever(value: never): never {
+  throw new Error(`Unhandled collector failure reason: ${value}`);
 }
 
-interface TokenDetails {
-  input_tokens: number;
-  output_tokens: number;
-  reasoning_tokens: number;
-  cached_tokens: number;
-  total_tokens: number;
-}
-
-interface RequestDetail {
-  timestamp: string;
-  latency_ms?: number;
-  source: string;
-  auth_index: string;
-  tokens: TokenDetails;
-  failed: boolean;
-}
-
-interface ModelUsage {
-  total_requests: number;
-  total_tokens: number;
-  details: RequestDetail[];
-}
-
-interface ApiUsageEntry {
-  total_requests: number;
-  total_tokens: number;
-  success_count?: number;
-  failure_count?: number;
-  input_tokens?: number;
-  output_tokens?: number;
-  models?: Record<string, ModelUsage>;
-  [key: string]: unknown;
-}
-
-interface RawUsageResponse {
-  total_requests: number;
-  success_count: number;
-  failure_count: number;
-  total_tokens: number;
-  apis: Record<string, ApiUsageEntry>;
-  requests_by_day?: Record<string, number>;
-  requests_by_hour?: Record<string, number>;
-  tokens_by_day?: Record<string, number>;
-  tokens_by_hour?: Record<string, number>;
-}
-
-function isApiUsageEntry(value: unknown): value is ApiUsageEntry {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "total_requests" in value &&
-    "total_tokens" in value &&
-    typeof (value as ApiUsageEntry).total_requests === "number" &&
-    typeof (value as ApiUsageEntry).total_tokens === "number"
-  );
-}
-
-function isRawUsageResponse(value: unknown): value is RawUsageResponse {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("total_requests" in value) ||
-    !("success_count" in value) ||
-    !("failure_count" in value) ||
-    !("total_tokens" in value) ||
-    !("apis" in value)
-  ) {
-    return false;
+function mapCollectorFailure(reason: UsageCollectorFailureReason) {
+  switch (reason) {
+    case "missing-management-api-key":
+      return apiError(ERROR_CODE.CONFIG_ERROR, "Server configuration error", 500);
+    case "collector-lock-failed":
+      return apiError(ERROR_CODE.INTERNAL_SERVER_ERROR, "Failed to acquire collector lock", 500);
+    case "proxy-service-unavailable":
+      return apiError(
+        ERROR_CODE.UPSTREAM_ERROR,
+        "Proxy service unavailable during usage collection",
+        503
+      );
+    case "failed-to-fetch-usage-data":
+      return apiError(ERROR_CODE.UPSTREAM_ERROR, "Failed to fetch usage data from CLIProxyAPI", 502);
+    case "unexpected-usage-response":
+      return apiError(ERROR_CODE.UPSTREAM_ERROR, "Invalid usage data format from CLIProxyAPI", 502);
+    case "usage-persist-failed":
+      return apiError(ERROR_CODE.INTERNAL_SERVER_ERROR, "Collection failed", 500);
+    default:
+      return assertNever(reason);
   }
-
-  const obj = value as Record<string, unknown>;
-  if (
-    typeof obj.total_requests !== "number" ||
-    typeof obj.success_count !== "number" ||
-    typeof obj.failure_count !== "number" ||
-    typeof obj.total_tokens !== "number" ||
-    typeof obj.apis !== "object" ||
-    obj.apis === null
-  ) {
-    return false;
-  }
-
-  const apis = obj.apis as Record<string, unknown>;
-  for (const apiValue of Object.values(apis)) {
-    if (!isApiUsageEntry(apiValue)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-interface UsageRecordCandidate {
-  authIndex: string;
-  apiKeyId: string | null;
-  userId: string | null;
-  model: string;
-  source: string;
-  timestamp: Date;
-  latencyMs: number;
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens: number;
-  cachedTokens: number;
-  totalTokens: number;
-  failed: boolean;
-}
-
-function usageDedupKey(candidate: Pick<UsageRecordCandidate, "authIndex" | "model" | "timestamp" | "source" | "totalTokens">): string {
-  return [
-    candidate.authIndex,
-    candidate.model,
-    candidate.timestamp.toISOString(),
-    candidate.source,
-    String(candidate.totalTokens),
-  ].join("|");
-}
-
-function buildLatencyBackfillCandidates(candidates: UsageRecordCandidate[]): UsageRecordCandidate[] {
-  const deduped = new Map<string, UsageRecordCandidate>();
-
-  for (const candidate of candidates) {
-    if (candidate.latencyMs <= 0) {
-      continue;
-    }
-    const key = usageDedupKey(candidate);
-    const existing = deduped.get(key);
-    if (!existing || candidate.latencyMs > existing.latencyMs) {
-      deduped.set(key, candidate);
-    }
-  }
-
-  return [...deduped.values()];
-}
-
-async function tryAcquireCollectorLease(now: Date): Promise<boolean> {
-  await prisma.collectorState.upsert({
-    where: { id: "singleton" },
-    create: {
-      id: "singleton",
-      lastCollectedAt: now,
-      lastStatus: "idle",
-      recordsStored: 0,
-      errorMessage: null,
-    },
-    update: {},
-  });
-
-  const staleBefore = new Date(now.getTime() - COLLECTOR_LEASE_STALE_MS);
-  const claim = await prisma.collectorState.updateMany({
-    where: {
-      id: "singleton",
-      OR: [
-        { lastStatus: { not: "running" } },
-        { updatedAt: { lt: staleBefore } },
-      ],
-    },
-    data: {
-      lastStatus: "running",
-      errorMessage: null,
-    },
-  });
-
-  return claim.count === 1;
 }
 
 export async function POST(request: NextRequest) {
@@ -241,321 +67,23 @@ export async function POST(request: NextRequest) {
     if (originError) return originError;
   }
 
-  if (!MANAGEMENT_API_KEY) {
-    logger.error("MANAGEMENT_API_KEY is not configured");
-    return Errors.internal("Server configuration error");
-  }
+  const result = await runUsageCollector({ trigger: isCronAuth ? "external" : "manual" });
 
-  const runId = randomUUID();
-  const startedAtMs = Date.now();
-  const leaseAcquiredAt = new Date();
-
-  try {
-    const leaseAcquired = await tryAcquireCollectorLease(leaseAcquiredAt);
-    if (!leaseAcquired) {
-      logger.warn({ runId }, "Usage collection skipped: collector already running");
-      return NextResponse.json({ success: false, message: "Collector already running", runId }, { status: 202 });
-    }
-  } catch (error) {
-    logger.error({ err: error, runId }, "Failed to acquire collector lease");
-    return Errors.internal("Failed to acquire collector lock");
-  }
-
-  try {
-    let usageResponse: Response;
-    let authFilesResponse: Response | null = null;
-    try {
-      [usageResponse, authFilesResponse] = await Promise.all([
-        fetch(`${CLIPROXYAPI_MANAGEMENT_URL}/usage`, {
-          method: "GET",
-          headers: { Authorization: `Bearer ${MANAGEMENT_API_KEY}` },
-          signal: AbortSignal.timeout(30_000),
-        }),
-        fetch(`${CLIPROXYAPI_MANAGEMENT_URL}/auth-files`, {
-          method: "GET",
-          headers: { Authorization: `Bearer ${MANAGEMENT_API_KEY}` },
-          signal: AbortSignal.timeout(30_000),
-        }).catch(() => null),
-      ]);
-    } catch (fetchError) {
-      logger.error({ err: fetchError }, "Failed to connect to CLIProxyAPI");
-      await markCollectorError(runId, "Proxy service unavailable");
-      return Errors.serviceUnavailable("Proxy service unavailable during usage collection");
-    }
-
-    interface AuthFileEntry {
-      auth_index: string;
-      file_name?: string;
-      email?: string;
-      provider?: string;
-    }
-
-    const authIndexToFile = new Map<string, { fileName: string; email: string }>();
-    if (authFilesResponse?.ok) {
-      try {
-        const authFilesJson: unknown = await authFilesResponse.json();
-        const entries: AuthFileEntry[] = Array.isArray(authFilesJson)
-          ? authFilesJson
-          : Array.isArray((authFilesJson as Record<string, unknown>)?.auth_files)
-            ? (authFilesJson as Record<string, unknown>).auth_files as AuthFileEntry[]
-            : [];
-        for (const entry of entries) {
-          if (entry.auth_index) {
-            authIndexToFile.set(entry.auth_index, {
-              fileName: entry.file_name ?? "",
-              email: entry.email ?? "",
-            });
-          }
-        }
-      } catch {
-        logger.warn("Failed to parse auth-files response");
-      }
-    } else if (authFilesResponse) {
-      await authFilesResponse.body?.cancel();
-    }
-
-    if (!usageResponse.ok) {
-      await usageResponse.body?.cancel();
-      logger.error(
-        { status: usageResponse.status, statusText: usageResponse.statusText },
-        "CLIProxyAPI usage endpoint returned error"
-      );
-      await markCollectorError(runId, "Failed to fetch usage data");
-      return Errors.badGateway("Failed to fetch usage data from CLIProxyAPI");
-    }
-
-    const responseJson: unknown = await usageResponse.json();
-
-    const rawData: unknown =
-      typeof responseJson === "object" &&
-      responseJson !== null &&
-      "usage" in responseJson
-        ? (responseJson as Record<string, unknown>).usage
-        : responseJson;
-
-    if (!isRawUsageResponse(rawData)) {
-      logger.error(
-        { response: JSON.stringify(responseJson).slice(0, 200) },
-        "Unexpected usage response format from CLIProxyAPI"
-      );
-      await markCollectorError(runId, "Invalid usage data format");
-      return Errors.badGateway("Invalid usage data format from CLIProxyAPI");
-    }
-
-    const syncResult = await syncKeysToCliProxyApi();
-    if (!syncResult.ok) {
-      logger.warn({ error: syncResult.error }, "API key sync failed before collection, continuing anyway");
-    }
-
-    const [apiKeys, oauthOwnerships, users] = await Promise.all([
-      prisma.userApiKey.findMany({
-        select: { id: true, key: true, userId: true },
-      }),
-      prisma.providerOAuthOwnership.findMany({
-        select: { accountName: true, accountEmail: true, userId: true },
-      }),
-      prisma.user.findMany({
-        select: { id: true, username: true },
-      }),
-    ]);
-
-    const sourceToUser = new Map<string, string>();
-    for (const o of oauthOwnerships) {
-      if (o.accountEmail) {
-        sourceToUser.set(o.accountEmail.toLowerCase(), o.userId);
-      }
-      sourceToUser.set(o.accountName.toLowerCase(), o.userId);
-    }
-    for (const u of users) {
-      sourceToUser.set(u.username.toLowerCase(), u.id);
-    }
-
-    const fullKeyMap = new Map<string, { apiKeyId: string; userId: string }>();
-    for (const k of apiKeys) {
-      fullKeyMap.set(k.key, { apiKeyId: k.id, userId: k.userId });
-    }
-
-    const keyMap = new Map<string, { apiKeyId: string; userId: string }>();
-    for (const k of apiKeys) {
-      const keyWithoutPrefix = k.key.startsWith("sk-") ? k.key.slice(3) : k.key;
-      const prefix16 = keyWithoutPrefix.substring(0, 16);
-      keyMap.set(prefix16, { apiKeyId: k.id, userId: k.userId });
-    }
-
-    const userToApiKey = new Map<string, string>();
-    for (const k of apiKeys) {
-      userToApiKey.set(k.userId, k.id);
-    }
-
-    const candidates: UsageRecordCandidate[] = [];
-
-    for (const [apiGroupKey, apiEntry] of Object.entries(rawData.apis)) {
-      const models = apiEntry.models as Record<string, ModelUsage> | undefined;
-      if (!models) continue;
-
-      const keyGroupInfo = apiGroupKey.startsWith("sk-")
-        ? fullKeyMap.get(apiGroupKey) ?? null
-        : null;
-
-      for (const [modelName, modelData] of Object.entries(models)) {
-        if (!modelData.details || !Array.isArray(modelData.details)) continue;
-
-        for (const detail of modelData.details) {
-          const authIndex = detail.auth_index;
-          if (!authIndex) continue;
-
-          let resolvedUserId: string | null = null;
-          let resolvedApiKeyId: string | null = null;
-
-          // Resolution priority: 1) API key grouping 2) auth-files 3) source email 4) auth_index prefix
-          if (keyGroupInfo) {
-            resolvedUserId = keyGroupInfo.userId;
-            resolvedApiKeyId = keyGroupInfo.apiKeyId;
-          }
-
-          if (!resolvedUserId) {
-            const authFile = authIndexToFile.get(authIndex);
-            if (authFile) {
-              const byFile = sourceToUser.get(authFile.fileName.toLowerCase());
-              if (byFile) {
-                resolvedUserId = byFile;
-              } else if (authFile.email) {
-                resolvedUserId = sourceToUser.get(authFile.email.toLowerCase()) ?? null;
-              }
-            }
-          }
-
-          if (!resolvedUserId && detail.source) {
-            resolvedUserId = sourceToUser.get(detail.source.toLowerCase()) ?? null;
-          }
-
-          if (!resolvedUserId) {
-            const keyInfo = keyMap.get(authIndex);
-            if (keyInfo) {
-              resolvedUserId = keyInfo.userId;
-              resolvedApiKeyId = keyInfo.apiKeyId;
-            }
-          }
-
-          if (resolvedUserId && !resolvedApiKeyId) {
-            resolvedApiKeyId = userToApiKey.get(resolvedUserId) ?? null;
-          }
-
-          candidates.push({
-            authIndex,
-            apiKeyId: resolvedApiKeyId,
-            userId: resolvedUserId,
-            model: modelName,
-            source: detail.source || "",
-            timestamp: new Date(detail.timestamp),
-            latencyMs: Number.isFinite(Number(detail.latency_ms)) ? Math.max(0, Math.round(Number(detail.latency_ms))) : 0,
-            inputTokens: detail.tokens?.input_tokens || 0,
-            outputTokens: detail.tokens?.output_tokens || 0,
-            reasoningTokens: detail.tokens?.reasoning_tokens || 0,
-            cachedTokens: detail.tokens?.cached_tokens || 0,
-            totalTokens: detail.tokens?.total_tokens || 0,
-            failed: detail.failed || false,
-          });
-        }
-      }
-    }
-
-    let totalStored = 0;
-    for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
-      const batch = candidates.slice(i, i + BATCH_SIZE);
-      const result = await prisma.usageRecord.createMany({
-        data: batch,
-        skipDuplicates: true,
-      });
-      totalStored += result.count;
-    }
-
-    let latencyBackfilled = 0;
-    const latencyBackfillCandidates = buildLatencyBackfillCandidates(candidates);
-    for (let i = 0; i < latencyBackfillCandidates.length; i += LATENCY_BACKFILL_BATCH_SIZE) {
-      const batch = latencyBackfillCandidates.slice(i, i + LATENCY_BACKFILL_BATCH_SIZE);
-      const results = await prisma.$transaction(
-        batch.map((candidate) =>
-          prisma.usageRecord.updateMany({
-            where: {
-              authIndex: candidate.authIndex,
-              model: candidate.model,
-              timestamp: candidate.timestamp,
-              source: candidate.source,
-              totalTokens: candidate.totalTokens,
-              latencyMs: 0,
-            },
-            data: {
-              latencyMs: candidate.latencyMs,
-            },
-          })
-        )
-      );
-      for (const result of results) {
-        latencyBackfilled += result.count;
-      }
-    }
-
-    const skipped = candidates.length - totalStored;
-    const now = new Date();
-    const durationMs = Date.now() - startedAtMs;
-
-    await prisma.collectorState.upsert({
-      where: { id: "singleton" },
-      create: {
-        id: "singleton",
-        lastCollectedAt: now,
-        lastStatus: "success",
-        recordsStored: totalStored,
-        errorMessage: null,
-      },
-      update: {
-        lastCollectedAt: now,
-        lastStatus: "success",
-        recordsStored: totalStored,
-        errorMessage: null,
-      },
-    });
-
-    logger.info(
-      { runId, processed: candidates.length, stored: totalStored, skipped, latencyBackfilled, durationMs },
-      "Usage collection completed"
-    );
-
+  if (result.ok) {
     return NextResponse.json({
-      runId,
-      processed: candidates.length,
-      stored: totalStored,
-      skipped,
-      latencyBackfilled,
-      durationMs,
-      lastCollectedAt: now.toISOString(),
+      runId: result.runId,
+      processed: result.processed,
+      stored: result.stored,
+      skipped: result.skippedCount,
+      latencyBackfilled: result.latencyBackfilled,
+      durationMs: result.durationMs,
+      lastCollectedAt: result.lastCollectedAt,
     });
-  } catch (error) {
-    const durationMs = Date.now() - startedAtMs;
-    logger.error({ err: error, runId, durationMs }, "Usage collection failed");
-
-    try {
-      await prisma.collectorState.upsert({
-        where: { id: "singleton" },
-        create: {
-          id: "singleton",
-          lastCollectedAt: new Date(),
-          lastStatus: "error",
-          recordsStored: 0,
-          errorMessage: "Collection failed",
-        },
-        update: {
-          lastCollectedAt: new Date(),
-          lastStatus: "error",
-          recordsStored: 0,
-          errorMessage: "Collection failed",
-        },
-      });
-    } catch {
-      /* state update failed, continue */
-    }
-
-    return Errors.internal("Collection failed");
   }
+
+  if (result.skipped) {
+    return NextResponse.json({ success: false, message: "Collector already running", runId: result.runId }, { status: 202 });
+  }
+
+  return mapCollectorFailure(result.reason);
 }
