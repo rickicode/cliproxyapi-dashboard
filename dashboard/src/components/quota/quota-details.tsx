@@ -56,6 +56,7 @@ interface QuotaDetailsProps {
   expandedCards: Record<string, boolean>;
   onToggleCard: (accountId: string) => void;
   loading: boolean;
+  error: boolean;
   modelFirstOnlyView: boolean;
 }
 
@@ -64,6 +65,7 @@ export function QuotaDetails({
   expandedCards,
   onToggleCard,
   loading,
+  error,
   modelFirstOnlyView,
 }: QuotaDetailsProps) {
   const t = useTranslations("quota");
@@ -324,7 +326,19 @@ export function QuotaDetails({
         ))}
       </div>
 
-      {filteredAccounts.length === 0 && !loading && (
+      {loading && (
+        <div className="rounded-md border border-[var(--surface-border)] bg-[var(--surface-base)] p-6 text-center text-sm text-[var(--text-muted)]">
+          {t("loadingText")}
+        </div>
+      )}
+
+      {error && !loading && (
+        <div className="rounded-md border border-rose-200 bg-rose-50 p-6 text-center text-sm text-rose-700">
+          {t("detailLoadFailed")}
+        </div>
+      )}
+
+      {!error && filteredAccounts.length === 0 && !loading && (
         <div className="rounded-md border border-[var(--surface-border)] bg-[var(--surface-base)] p-6 text-center text-sm text-[var(--text-muted)]">
           {t("noAccountsFound")}
         </div>

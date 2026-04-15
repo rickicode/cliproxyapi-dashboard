@@ -102,6 +102,9 @@
     "quotaExhaustedTitle": "{provider}-Kontingent erschöpft",
     "quotaLowTitle": "{provider}-Kontingent niedrig",
     "quotaMessage": "{email} — {label} bei {percent}%",
+    "quotaSummaryWarningTitle": "{provider}-Snapshot-Warnung",
+    "quotaSummaryMessage": "Das {provider}-Snapshot-Kontingent ist für {count} aktive Konten nicht vollständig überprüfbar.",
+    "quotaSummaryLowMessage": "{provider} hat über aktive Konten hinweg nur noch geringe verbleibende Kapazität.",
     "proxyUpdateTitle": "Proxy-Update verfügbar",
     "dashboardUpdateTitle": "Dashboard-Update verfügbar",
     "updateVersionMessage": "{current} → {latest}"
@@ -799,6 +802,8 @@
     "fullResetColumnLabel": "Vollständiger Reset",
     "bottleneckColumnLabel": "Engpass",
     "noAccountsFound": "Keine Konten für den ausgewählten Filter gefunden.",
+    "detailLoadFailed": "Kontodetails konnten nicht geladen werden. Die Zusammenfassung ist weiterhin verfügbar.",
+    "summaryLoadFailed": "Die Kontingent-Zusammenfassung konnte nicht geladen werden. Zusammenfassungsmetriken sind derzeit nicht verfügbar.",
     "resettingStatus": "Wird zurückgesetzt...",
     "relativeTimeDaysHours": "{days}T {hours}Std",
     "relativeTimeHoursMinutes": "{hours}Std {minutes}Min",

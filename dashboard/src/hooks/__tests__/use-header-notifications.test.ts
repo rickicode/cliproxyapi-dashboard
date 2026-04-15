@@ -79,6 +79,94 @@ describe("buildNotifications — deterministic IDs", () => {
     expect(ids).toContain("update-dashboard");
   });
 
+  it("generates stable IDs from quota summary warnings without detail accounts", () => {
+    const result = buildNotifications(
+      healthOk,
+      {
+        warnings: [
+          { provider: "antigravity", count: 3 },
+          { provider: "gemini", count: 1 },
+        ],
+      },
+      null,
+      null,
+      t,
+      NOW
+    );
+
+    expect(result.map((n) => n.id)).toEqual([
+      "quota-summary-warning-antigravity",
+      "quota-summary-warning-gemini",
+    ]);
+  });
+
+  it("uses distinct summary warning semantics instead of quota-low titles", () => {
+    const [notification] = buildNotifications(
+      healthOk,
+      {
+        warnings: [{ provider: "antigravity", count: 2 }],
+      },
+      null,
+      null,
+      t,
+      NOW
+    );
+
+    expect(notification).toMatchObject({
+      id: "quota-summary-warning-antigravity",
+      type: "warning",
+      title: "quotaSummaryWarningTitle",
+      message: "quotaSummaryMessage",
+      link: "/dashboard/quota",
+      timestamp: NOW,
+    });
+  });
+
+  it("keeps detail-based low quota notifications for account groups", () => {
+    const [notification] = buildNotifications(
+      healthOk,
+      { accounts: [accountWithWarnQuota] },
+      null,
+      null,
+      t,
+      NOW
+    );
+
+    expect(notification).toMatchObject({
+      id: "quota-warn-gemini-1-daily",
+      type: "warning",
+      title: "quotaLowTitle",
+      message: "quotaMessage",
+      link: "/dashboard/quota",
+      timestamp: NOW,
+    });
+  });
+
+  it("creates low-capacity warning notifications from summary providers when detail accounts are unavailable", () => {
+    const [notification] = buildNotifications(
+      healthOk,
+      {
+        providers: [
+          { provider: "copilot", lowCapacity: true },
+          { provider: "claude", lowCapacity: false },
+        ],
+      },
+      null,
+      null,
+      t,
+      NOW
+    );
+
+    expect(notification).toMatchObject({
+      id: "quota-summary-low-copilot",
+      type: "warning",
+      title: "quotaLowTitle",
+      message: "quotaSummaryLowMessage",
+      link: "/dashboard/quota",
+      timestamp: NOW,
+    });
+  });
+
   it("IDs are identical across multiple calls with same inputs", () => {
     const inputs = [
       healthBothError,

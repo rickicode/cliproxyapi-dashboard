@@ -40,12 +40,39 @@ export interface UpdateCheckResult {
   buildInProgress: boolean;
 }
 
+interface QuotaWarningSummary {
+  provider: string;
+  count: number;
+}
+
+interface QuotaProviderSummaryNotification {
+  provider: string;
+  lowCapacity: boolean;
+}
+
+type QuotaNotificationData =
+  | {
+      accounts: readonly QuotaAccount[];
+      warnings?: readonly QuotaWarningSummary[];
+      providers?: readonly QuotaProviderSummaryNotification[];
+    }
+  | {
+      warnings: readonly QuotaWarningSummary[];
+      accounts?: readonly QuotaAccount[];
+      providers?: readonly QuotaProviderSummaryNotification[];
+    }
+  | {
+      providers: readonly QuotaProviderSummaryNotification[];
+      accounts?: readonly QuotaAccount[];
+      warnings?: readonly QuotaWarningSummary[];
+    };
+
 export const QUOTA_CRITICAL_THRESHOLD = 0.05; // 5%
 export const QUOTA_WARNING_THRESHOLD = 0.20;  // 20%
 
 export function buildNotifications(
   healthData: HealthStatus | null | undefined,
-  quotaData: { accounts: readonly QuotaAccount[] } | null | undefined,
+  quotaData: QuotaNotificationData | null | undefined,
   proxyUpdateData: UpdateCheckResult | null | undefined,
   dashUpdateData: UpdateCheckResult | null | undefined,
   t: TranslationFn,
@@ -103,6 +130,30 @@ export function buildNotifications(
         });
       }
     }
+  }
+
+  for (const warning of quotaData?.warnings ?? []) {
+    items.push({
+      id: `quota-summary-warning-${warning.provider}`,
+      type: "warning",
+      title: t("quotaSummaryWarningTitle", { provider: warning.provider }),
+      message: t("quotaSummaryMessage", { provider: warning.provider, count: warning.count }),
+      link: "/dashboard/quota",
+      timestamp: now,
+    });
+  }
+
+   for (const provider of quotaData?.providers ?? []) {
+    if (!provider.lowCapacity) continue;
+
+    items.push({
+      id: `quota-summary-low-${provider.provider}`,
+      type: "warning",
+      title: t("quotaLowTitle", { provider: provider.provider }),
+      message: t("quotaSummaryLowMessage", { provider: provider.provider }),
+      link: "/dashboard/quota",
+      timestamp: now,
+    });
   }
 
   // 3. Update checks

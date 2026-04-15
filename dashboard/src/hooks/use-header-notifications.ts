@@ -5,11 +5,11 @@ import { useTranslations } from "next-intl";
 import useSWR from "swr";
 import { API_ENDPOINTS } from "@/lib/api-endpoints";
 import { useHealthStatus } from "@/hooks/use-health-status";
+import { useQuotaSummaryData } from "@/hooks/use-quota-data";
 import {
   buildNotifications,
   type Notification,
   type HealthStatus,
-  type QuotaAccount,
   type UpdateCheckResult,
   type TranslationFn,
 } from "@/hooks/notification-utils";
@@ -91,11 +91,7 @@ export function useHeaderNotifications(isAdmin: boolean, userId: string) {
   const { raw: healthRaw } = useHealthStatus();
   const healthData = (debug ? undefined : healthRaw) as HealthStatus | undefined;
 
-  const { data: quotaData } = useSWR<{ accounts: QuotaAccount[] }>(
-    debug ? null : API_ENDPOINTS.QUOTA.BASE,
-    silentFetcher,
-    { refreshInterval: CHECK_INTERVAL, dedupingInterval: 30_000, revalidateOnFocus: false }
-  );
+  const { data: quotaData } = useQuotaSummaryData({ enabled: !debug, refreshInterval: CHECK_INTERVAL });
 
   const { data: proxyUpdateData } = useSWR<UpdateCheckResult>(
     debug || !isAdmin ? null : API_ENDPOINTS.UPDATE.CHECK,

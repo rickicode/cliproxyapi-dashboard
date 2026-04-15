@@ -102,6 +102,9 @@
     "quotaExhaustedTitle": "{provider} Quota Exhausted",
     "quotaLowTitle": "{provider} Quota Low",
     "quotaMessage": "{email} â€” {label} at {percent}%",
+    "quotaSummaryWarningTitle": "{provider} Snapshot Warning",
+    "quotaSummaryMessage": "{provider} snapshot quota is not fully verifiable for {count} active accounts.",
+    "quotaSummaryLowMessage": "{provider} has low remaining capacity across active accounts.",
     "proxyUpdateTitle": "Proxy Update Available",
     "dashboardUpdateTitle": "Dashboard Update Available",
     "updateVersionMessage": "{current} â†’ {latest}"
@@ -799,6 +802,8 @@
     "fullResetColumnLabel": "Full Reset",
     "bottleneckColumnLabel": "Bottleneck",
     "noAccountsFound": "No accounts found for the selected filter.",
+    "detailLoadFailed": "Unable to load account details. Summary data is still available.",
+    "summaryLoadFailed": "Unable to load quota summary. Summary metrics are unavailable right now.",
     "resettingStatus": "Resetting...",
     "relativeTimeDaysHours": "{days}d {hours}h",
     "relativeTimeHoursMinutes": "{hours}h {minutes}m",
