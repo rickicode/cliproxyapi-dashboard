@@ -6,14 +6,14 @@ Next.js 16 + React 19 + TypeScript 5.9 + Prisma 7 (PostgreSQL) + Tailwind CSS 4
 
 ## System Diagram
 ```
-Browser ──► Next.js App Router (dashboard:3000)
+Browser ──► Next.js App Router (dashboard:8318)
               ├── /app/api/*         → Prisma DB (PostgreSQL)
               ├── /app/api/management/* → CLIProxyAPI backend (:8317)
               └── /app/dashboard/*   → SSR/CSR pages
 ```
 
 ## Service Boundaries
-- **Dashboard** (this repo): UI + API routes + DB access
+- **Dashboard** (this repo): UI + API routes + DB access, canonical runtime port `8318`
 - **CLIProxyAPI** (external): AI proxy backend, proxied via `/api/management/[...path]`
 - **PostgreSQL**: User data, providers, usage, config, audit logs
 

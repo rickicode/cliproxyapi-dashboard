@@ -41,7 +41,7 @@ RUN apk add --no-cache tini docker-cli
 ARG DASHBOARD_VERSION=dev
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
-ENV PORT=3000
+ENV PORT=8318
 ENV COMPOSE_DIR=/opt/cliproxyapi/infrastructure
 ENV DASHBOARD_VERSION=${DASHBOARD_VERSION}
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -64,9 +64,9 @@ RUN mkdir -p /app/logs && chown nextjs:nodejs /app/logs
 
 USER nextjs
 
-EXPOSE 3000
+EXPOSE 8318
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=40s \
-  CMD node -e "fetch('http://localhost:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://localhost:8318/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["./entrypoint.sh"]

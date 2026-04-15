@@ -254,6 +254,8 @@ echo ""
 REQUIRED_PORTS=()
 if [ $EXTERNAL_PROXY -eq 0 ]; then
     REQUIRED_PORTS+=(80 443)
+else
+    REQUIRED_PORTS+=(8318)
 fi
 if [ $OAUTH_ENABLED -eq 1 ]; then
     REQUIRED_PORTS+=(8085 1455 54545 51121 11451)
@@ -722,7 +724,7 @@ log_info "Setting up usage data collection (every 5 minutes)..."
 log_info "This prevents data loss when the proxy restarts."
 
 if [ $EXTERNAL_PROXY -eq 1 ]; then
-    COLLECTOR_URL="http://127.0.0.1:3000"
+    COLLECTOR_URL="http://127.0.0.1:8318"
 else
     COLLECTOR_URL="https://${DASHBOARD_SUBDOMAIN}.${DOMAIN}"
 fi
@@ -748,21 +750,21 @@ if [ $EXTERNAL_PROXY -eq 1 ]; then
     log_info "=== External Proxy Mode Setup ==="
     echo ""
     
-    # Create docker-compose.override.yml to expose dashboard on localhost:3000
+    # Create docker-compose.override.yml to expose dashboard on localhost:8318
     OVERRIDE_FILE="$INSTALL_DIR/infrastructure/docker-compose.override.yml"
     
-    log_info "Creating docker-compose.override.yml to expose dashboard on 127.0.0.1:3000..."
+    log_info "Creating docker-compose.override.yml to expose dashboard on 127.0.0.1:8318..."
     
     cat > "$OVERRIDE_FILE" << 'COMPOSE_OVERRIDE'
 services:
   dashboard:
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:8318:8318"
 COMPOSE_OVERRIDE
     
     chmod 644 "$OVERRIDE_FILE"
     log_success "Override file created at $OVERRIDE_FILE"
-    log_info "Dashboard will be accessible at http://127.0.0.1:3000 for your reverse proxy"
+    log_info "Dashboard will be accessible at http://127.0.0.1:8318 for your reverse proxy"
     echo ""
 fi
 
@@ -779,7 +781,7 @@ if [ $EXTERNAL_PROXY -eq 1 ]; then
     CADDY_SNIPPET_HOST=$(cat << 'CADDY_CONFIG'
 # BEGIN CLIPROXYAPI-AUTO (Host Caddy - localhost upstream)
 ${DASHBOARD_SUBDOMAIN}.${DOMAIN} {
-    reverse_proxy localhost:3000
+    reverse_proxy localhost:8318
 }
 
 ${API_SUBDOMAIN}.${DOMAIN} {
@@ -793,7 +795,7 @@ CADDY_CONFIG
     CADDY_SNIPPET_DOCKER=$(cat << 'CADDY_DOCKER_CONFIG'
 # BEGIN CLIPROXYAPI-AUTO (Docker Caddy - container upstream)
 ${DASHBOARD_SUBDOMAIN}.${DOMAIN} {
-    reverse_proxy cliproxyapi-dashboard:3000
+    reverse_proxy cliproxyapi-dashboard:8318
 }
 
 ${API_SUBDOMAIN}.${DOMAIN} {
@@ -1057,7 +1059,7 @@ echo "     docker compose logs -f"
 echo ""
 if [ $EXTERNAL_PROXY -eq 1 ]; then
     echo "  4. Configure your reverse proxy:"
-    echo "     - Dashboard routes to: localhost:3000"
+    echo "     - Dashboard routes to: localhost:8318"
     echo "     - API routes to: localhost:8317"
     echo "     - Ports 80/443 not bound by this stack"
     echo ""

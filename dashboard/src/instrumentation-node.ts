@@ -51,7 +51,7 @@ function startQuotaAlertScheduler() {
         return;
       }
 
-      const port = process.env.PORT ?? "3000";
+      const port = process.env.PORT ?? "8318";
       const baseUrl = process.env.NEXTAUTH_URL ?? process.env.DASHBOARD_URL ?? `http://localhost:${port}`;
 
       const quotaFetcher = async () => {

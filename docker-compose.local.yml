@@ -102,7 +102,7 @@ services:
       PERPLEXITY_COOKIES: ${PERPLEXITY_COOKIES:-}
       PERPLEXITY_SIDECAR_SECRET: ${PERPLEXITY_SIDECAR_SECRET:-}
       MANAGEMENT_API_KEY: ${MANAGEMENT_API_KEY}
-      DASHBOARD_URL: http://dashboard:3000
+      DASHBOARD_URL: http://dashboard:8318
       PORT: "8766"
       PERPLEXITY_SIDECAR_AUTO_UPDATE: ${PERPLEXITY_SIDECAR_AUTO_UPDATE:-true}
       UPDATE_CHECK_INTERVAL: ${UPDATE_CHECK_INTERVAL:-3600}
@@ -114,20 +114,22 @@ services:
       start_period: 10s
 
   dashboard:
-    image: ghcr.io/itsmylife44/cliproxyapi-dashboard/dashboard:latest
+    build:
+      context: ./dashboard
     container_name: cliproxyapi-dashboard
     restart: unless-stopped
     networks:
       - frontend
       - backend
     ports:
-      - "127.0.0.1:8318:3000"
+      - "127.0.0.1:8318:8318"
     environment:
       DATABASE_URL: postgresql://cliproxyapi:${POSTGRES_PASSWORD}@postgres:5432/cliproxyapi
       CLIPROXYAPI_MANAGEMENT_URL: http://cliproxyapi:8317/v0/management
       MANAGEMENT_API_KEY: ${MANAGEMENT_API_KEY}
       JWT_SECRET: ${JWT_SECRET}
       NODE_ENV: production
+      PORT: "8318"
       DOCKER_HOST: tcp://docker-proxy:2375
       DASHBOARD_URL: http://localhost:8318
       API_URL: http://localhost:8317
@@ -139,7 +141,7 @@ services:
       docker-proxy:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8318/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 10s
       retries: 3

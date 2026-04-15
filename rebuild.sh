@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pull latest GHCR images and restart CLIProxyAPI Dashboard services
+# Rebuild dashboard locally and refresh pulled services
 # Usage: ./rebuild.sh [--dashboard-only]
 
 set -e
@@ -10,22 +10,26 @@ echo "=== CLIProxyAPI Dashboard Update ==="
 echo ""
 
 if [ "${1:-}" = "--dashboard-only" ]; then
-    echo "[1/2] Pulling latest dashboard image..."
-    docker compose pull dashboard
+    echo "[1/2] Building dashboard image..."
+    docker compose build dashboard
 
     echo ""
     echo "[2/2] Recreating dashboard container..."
     docker compose up -d --no-deps dashboard
 else
-    echo "[1/3] Pulling latest images..."
-    docker compose pull
+    echo "[1/4] Pulling latest images for non-build services..."
+    docker compose pull --ignore-buildable
 
     echo ""
-    echo "[2/3] Stopping and removing old containers..."
+    echo "[2/4] Building dashboard image..."
+    docker compose build dashboard
+
+    echo ""
+    echo "[3/4] Stopping and removing old containers..."
     docker compose down
 
     echo ""
-    echo "[3/3] Starting fresh containers..."
+    echo "[4/4] Starting fresh containers..."
     docker compose up -d
 fi
 

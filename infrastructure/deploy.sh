@@ -73,17 +73,26 @@ trap 'rm -f "$LOCK_FILE"' EXIT
 echo "" > "$LOG_FILE"
 update_status "init" "running" "Starting deployment..."
 
-# Step 1: Pull latest image
-update_status "pull" "running" "Pulling latest dashboard image from GHCR..."
-cd "$INFRA_DIR"
-if docker compose pull dashboard >> "$LOG_FILE" 2>&1; then
-    update_status "pull" "completed" "Image pull successful"
+# Step 1: Refresh repository source
+update_status "pull" "running" "Refreshing repository source before build..."
+if git -C "$REPO_DIR" fetch --prune >> "$LOG_FILE" 2>&1 && git -C "$REPO_DIR" pull --ff-only >> "$LOG_FILE" 2>&1; then
+    update_status "pull" "completed" "Repository refresh successful"
 else
-    update_status "pull" "failed" "Image pull failed"
+    update_status "pull" "failed" "Repository refresh failed"
     exit 1
 fi
 
-# Step 2: Ensure docker-proxy is running
+# Step 2: Build latest dashboard image
+update_status "build" "running" "Building latest dashboard image locally..."
+cd "$INFRA_DIR"
+if docker compose build dashboard >> "$LOG_FILE" 2>&1; then
+    update_status "build" "completed" "Dashboard image build successful"
+else
+    update_status "build" "failed" "Dashboard image build failed"
+    exit 1
+fi
+
+# Step 3: Ensure docker-proxy is running
 update_status "proxy" "running" "Ensuring Docker socket proxy is running..."
 if docker compose up -d docker-proxy >> "$LOG_FILE" 2>&1; then
     update_status "proxy" "completed" "Docker socket proxy is running"
@@ -92,7 +101,7 @@ else
     exit 1
 fi
 
-# Step 3: Deploy new dashboard container
+# Step 4: Deploy new dashboard container
 update_status "deploy" "running" "Starting new dashboard container..."
 if docker compose up -d --no-deps dashboard >> "$LOG_FILE" 2>&1; then
     update_status "deploy" "completed" "Container started successfully"
@@ -101,7 +110,7 @@ else
     exit 1
 fi
 
-# Step 4: Health Check
+# Step 5: Health Check
 update_status "health" "running" "Waiting for health check..."
 sleep 5
 

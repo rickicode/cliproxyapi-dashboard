@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // Use server-side env var for base URL instead of trusting request headers
-    const port = process.env.PORT ?? "3000";
+    const port = process.env.PORT ?? "8318";
     const baseUrl = process.env.NEXTAUTH_URL ?? process.env.DASHBOARD_URL ?? `http://localhost:${port}`;
 
     if (!MANAGEMENT_API_KEY) {
