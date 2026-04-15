@@ -121,3 +121,4 @@ infrastructure/.env
 
 # Sisyphus (multi-agent harness metadata - local dev only)
 /.sisyphus/
+/.worktrees/
