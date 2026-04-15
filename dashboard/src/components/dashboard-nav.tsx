@@ -105,6 +105,17 @@ function IconUsers({ className }: { className?: string }) {
   );
 }
 
+function IconUserLinks({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M10 13a5 5 0 1 0-5-5 5 5 0 0 0 5 5Z" />
+      <path d="M2 21a8 8 0 0 1 16 0" />
+      <path d="M16 8h5" />
+      <path d="M18.5 5.5 21 8l-2.5 2.5" />
+    </svg>
+  );
+}
+
 function IconLogs({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
@@ -149,6 +160,7 @@ const NAV_SECTIONS = [
 const NAV_ITEMS = [
   { href: "/dashboard", labelKey: "quickStart", icon: IconPlayCircle, adminOnly: false, section: "general" },
   { href: "/dashboard/providers", labelKey: "providers", icon: IconLayers, adminOnly: false, section: "general" },
+  { href: "/dashboard/connected-accounts", labelKey: "connectedAccounts", icon: IconUserLinks, adminOnly: false, section: "general" },
   { href: "/dashboard/usage", labelKey: "usage", icon: IconBarChart, adminOnly: false, section: "general" },
   { href: "/dashboard/quota", labelKey: "quota", icon: IconGauge, adminOnly: false, section: "general" },
   { href: "/dashboard/api-keys", labelKey: "apiKeys", icon: IconKey, adminOnly: false, section: "access" },

@@ -18,6 +18,7 @@ import {
   type ProviderState,
 } from "@/components/providers/api-key-section";
 import { CustomProviderSection } from "@/components/providers/custom-provider-section";
+import { OAuthPreviewCard } from "@/components/providers/oauth-preview-card";
 import { OAuthSection } from "@/components/providers/oauth-section";
 import { PerplexityProSection } from "@/components/providers/perplexity-pro-section";
 
@@ -206,9 +207,7 @@ export default function ProvidersPage() {
             <div className="border-t border-[var(--surface-border)] pt-6">
               <OAuthSection
                 showToast={showToast}
-                currentUser={currentUser}
                 refreshProviders={refreshProviders}
-                onAccountCountChange={setOauthAccountCount}
                 incognitoBrowserEnabled={incognitoBrowserEnabled}
               />
             </div>
@@ -222,6 +221,8 @@ export default function ProvidersPage() {
 
             <PerplexityProSection showToast={showToast} />
           </section>
+
+          <OAuthPreviewCard currentUser={currentUser} onAccountCountChange={setOauthAccountCount} />
 
           {currentUser?.isAdmin && (
             <section id="provider-admin" className="space-y-3 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-base)] p-4">
