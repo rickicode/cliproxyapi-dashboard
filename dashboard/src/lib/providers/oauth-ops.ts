@@ -17,6 +17,7 @@ import {
   type ToggleOAuthResult,
   type OAuthAccountWithOwnership,
 } from "./management-api";
+import { type OAuthListItem, type OAuthListQuery, buildOAuthListResponse } from "./oauth-listing";
 import type { CodexBulkCredentialInput } from "@/lib/validation/schemas";
 import { inferOAuthProviderFromIdentifiers, isMeaningfulProviderValue } from "./provider-inference";
 
@@ -34,6 +35,104 @@ export interface BulkImportOAuthCredentialResult {
     total: number;
     successCount: number;
     failureCount: number;
+  };
+}
+
+export interface BulkOAuthActionFailure {
+  actionKey: string;
+  reason: string;
+}
+
+export interface BulkOAuthActionSummary {
+  total: number;
+  successCount: number;
+  failureCount: number;
+}
+
+export interface BulkUpdateOAuthAccountsInput {
+  action: "enable" | "disable" | "disconnect";
+  actionKeys: string[];
+}
+
+export interface BulkUpdateOAuthAccountsResult {
+  ok: boolean;
+  error?: string;
+  summary: BulkOAuthActionSummary;
+  failures: BulkOAuthActionFailure[];
+}
+
+export function summarizeBulkOAuthAction(
+  actionKeys: string[],
+  failures: BulkOAuthActionFailure[]
+): BulkOAuthActionSummary {
+  return {
+    total: actionKeys.length,
+    successCount: actionKeys.length - failures.length,
+    failureCount: failures.length,
+  };
+}
+
+export async function listOAuthAccounts(userId: string, isAdmin: boolean, query: OAuthListQuery) {
+  const result = await listOAuthWithOwnership(userId, isAdmin);
+
+  if (!result.ok || !result.accounts) {
+    return { ok: false as const, error: result.error ?? "Failed to list OAuth accounts" };
+  }
+
+  const rows: OAuthListItem[] = result.accounts.map((row) => ({
+    ...row,
+    actionKey: row.isOwn || isAdmin ? row.accountName : "",
+    canToggle: row.isOwn || isAdmin,
+    canDelete: row.isOwn || isAdmin,
+    canClaim: Boolean(isAdmin && !row.ownerUserId && row.accountName && (row.isOwn || isAdmin)),
+  }));
+
+  return { ok: true as const, data: buildOAuthListResponse(rows, query) };
+}
+
+export async function bulkUpdateOAuthAccounts(
+  userId: string,
+  isAdmin: boolean,
+  input: BulkUpdateOAuthAccountsInput
+): Promise<BulkUpdateOAuthAccountsResult> {
+  const failures: BulkOAuthActionFailure[] = [];
+
+  for (const actionKey of input.actionKeys) {
+    if (!actionKey) {
+      failures.push({
+        actionKey,
+        reason: "Missing action key",
+      });
+      continue;
+    }
+
+    let result:
+      | RemoveOAuthResult
+      | ToggleOAuthResult;
+
+    if (input.action === "disconnect") {
+      result = await removeOAuthAccountByIdOrName(userId, actionKey, isAdmin);
+    } else {
+      result = await toggleOAuthAccountByIdOrName(
+        userId,
+        actionKey,
+        input.action === "disable",
+        isAdmin
+      );
+    }
+
+    if (!result.ok) {
+      failures.push({
+        actionKey,
+        reason: result.error ?? "Operation failed",
+      });
+    }
+  }
+
+  return {
+    ok: true,
+    summary: summarizeBulkOAuthAction(input.actionKeys, failures),
+    failures,
   };
 }
 

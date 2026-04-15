@@ -153,6 +153,9 @@ model ProviderOAuthOwnership {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([provider])
+  @@index([userId, provider])
+  @@index([accountEmail])
   @@map("provider_oauth_ownerships")
 }
 

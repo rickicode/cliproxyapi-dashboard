@@ -39,6 +39,7 @@ export const API_ENDPOINTS = {
   PROVIDERS: {
     KEYS: "/api/providers/keys",
     OAUTH: "/api/providers/oauth",
+    OAUTH_BULK: "/api/providers/oauth/bulk",
     OAUTH_IMPORT: "/api/providers/oauth/import",
     OAUTH_CLAIM: "/api/providers/oauth/claim",
     PERPLEXITY_COOKIE: "/api/providers/perplexity-cookie",

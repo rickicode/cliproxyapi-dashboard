@@ -4,12 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal, ModalContent, ModalFooter, ModalHeader, ModalTitle } from "@/components/ui/modal";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { extractApiError } from "@/lib/utils";
 import { API_ENDPOINTS } from "@/lib/api-endpoints";
-import type { CurrentUserLike } from "@/components/providers/api-key-section";
-import { OAuthCredentialList, type OAuthAccountWithOwnership } from "@/components/providers/oauth-credential-list";
 import { OAuthImportForm } from "@/components/providers/oauth-import-form";
 import { OAuthActions } from "@/components/providers/oauth-actions";
 import { useTranslations } from "next-intl";
@@ -19,9 +16,7 @@ type ShowToast = ReturnType<typeof useToast>["showToast"];
 
 interface OAuthSectionProps {
   showToast: ShowToast;
-  currentUser: CurrentUserLike | null;
   refreshProviders: () => Promise<void>;
-  onAccountCountChange: (count: number) => void;
   incognitoBrowserEnabled?: boolean;
 }
 
@@ -192,9 +187,7 @@ const validateCallbackUrl = (value: string): ValidationResult => {
 
 export function OAuthSection({
   showToast,
-  currentUser,
   refreshProviders,
-  onAccountCountChange,
   incognitoBrowserEnabled = false,
 }: OAuthSectionProps) {
   const t = useTranslations("providers");
@@ -223,13 +216,6 @@ export function OAuthSection({
   const [deviceCodeInfo, setDeviceCodeInfo] = useState<{ verificationUrl: string; userCode: string } | null>(null);
   const deviceCodePopupOpenedRef = useRef(false);
   const incognitoRef = useRef(incognitoBrowserEnabled);
-  incognitoRef.current = incognitoBrowserEnabled;
-  const [accounts, setAccounts] = useState<OAuthAccountWithOwnership[]>([]);
-  const [oauthAccountsLoading, setOauthAccountsLoading] = useState(true);
-  const [showConfirmOAuthDelete, setShowConfirmOAuthDelete] = useState(false);
-  const [pendingOAuthDelete, setPendingOAuthDelete] = useState<{ accountId: string; accountName: string } | null>(null);
-  const [togglingAccountId, setTogglingAccountId] = useState<string | null>(null);
-  const [claimingAccountName, setClaimingAccountName] = useState<string | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importProviderId, setImportProviderId] = useState<OAuthProviderId | null>(null);
   const [importJsonContent, setImportJsonContent] = useState("");
@@ -240,6 +226,10 @@ export function OAuthSection({
 
   const selectedOAuthProvider = getOAuthProviderById(selectedOAuthProviderId);
   const selectedOAuthProviderRequiresCallback = selectedOAuthProvider?.requiresCallback ?? true;
+
+  useEffect(() => {
+    incognitoRef.current = incognitoBrowserEnabled;
+  }, [incognitoBrowserEnabled]);
 
   const stopPolling = useCallback(() => {
     if (pollingIntervalRef.current !== null) {
@@ -256,73 +246,6 @@ export function OAuthSection({
     }
     noCallbackClaimAttemptsRef.current = 0;
   }, []);
-
-  const loadAccounts = useCallback(async () => {
-    setOauthAccountsLoading(true);
-    try {
-      const res = await fetch(API_ENDPOINTS.PROVIDERS.OAUTH);
-      if (!res.ok) {
-        showToast(t("toastOAuthLoadFailed"), "error");
-        setOauthAccountsLoading(false);
-        return;
-      }
-
-      const data = await res.json();
-      const nextAccounts = Array.isArray(data.accounts) ? data.accounts : [];
-      setAccounts(nextAccounts);
-      onAccountCountChange(nextAccounts.length);
-      setOauthAccountsLoading(false);
-    } catch {
-      setOauthAccountsLoading(false);
-      showToast(t("toastNetworkError"), "error");
-      setOauthErrorMessage(t("errorOAuthAccountsNetwork"));
-    }
-  }, [onAccountCountChange, showToast, t]);
-
-  const toggleOAuthAccount = async (accountId: string, currentlyDisabled: boolean) => {
-    setTogglingAccountId(accountId);
-    try {
-      const res = await fetch(`${API_ENDPOINTS.PROVIDERS.OAUTH}/${accountId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ disabled: !currentlyDisabled }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        showToast(extractApiError(data, t("errorUpdateAccountFailed")), "error");
-      } else {
-        showToast(!currentlyDisabled ? t("toastOAuthDisabled") : t("toastOAuthEnabled"), "success");
-        await loadAccounts();
-        await refreshProviders();
-      }
-    } catch {
-      showToast(t("toastNetworkError"), "error");
-    } finally {
-      setTogglingAccountId(null);
-    }
-  };
-
-  const claimOAuthAccount = async (accountName: string) => {
-    setClaimingAccountName(accountName);
-    try {
-      const res = await fetch(API_ENDPOINTS.PROVIDERS.OAUTH_CLAIM, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountName }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        showToast(extractApiError(data, t("toastOAuthClaimFailed")), "error");
-      } else {
-        showToast(t("toastOAuthClaimSuccess"), "success");
-        await loadAccounts();
-      }
-    } catch {
-      showToast(t("toastNetworkError"), "error");
-    } finally {
-      setClaimingAccountName(null);
-    }
-  };
 
   const openAuthPopup = (url: string) => {
     const popup = window.open(url, "oauth", "width=600,height=800");
@@ -381,7 +304,6 @@ export function OAuthSection({
           setOauthModalStatus(MODAL_STATUS.SUCCESS);
           showToast(t("toastOAuthConnected"), "success");
           await refreshProviders();
-          void loadAccounts();
           return;
         }
 
@@ -455,7 +377,6 @@ export function OAuthSection({
       }
 
       stopNoCallbackClaimPolling();
-      void loadAccounts();
     } catch {
       if (noCallbackClaimAttemptsRef.current >= 25) {
         stopNoCallbackClaimPolling();
@@ -612,34 +533,6 @@ export function OAuthSection({
     } catch {
       setOauthModalStatus(MODAL_STATUS.ERROR);
       setOauthErrorMessage(t("errorOAuthCallbackNetwork"));
-    }
-  };
-
-  const confirmDeleteOAuth = (accountId: string) => {
-    const account = accounts.find((a) => a.id === accountId);
-    if (!account) return;
-    setPendingOAuthDelete({ accountId, accountName: account.accountName });
-    setShowConfirmOAuthDelete(true);
-  };
-
-  const handleOAuthDelete = async () => {
-    if (!pendingOAuthDelete) return;
-    const { accountId } = pendingOAuthDelete;
-
-    try {
-      const res = await fetch(`${API_ENDPOINTS.PROVIDERS.OAUTH}/${accountId}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        showToast(extractApiError(data, t("toastOAuthDeleteFailed")), "error");
-        return;
-      }
-      showToast(t("toastOAuthDeleted"), "success");
-      await refreshProviders();
-      void loadAccounts();
-    } catch {
-      showToast(t("toastNetworkError"), "error");
     }
   };
 
@@ -811,14 +704,12 @@ export function OAuthSection({
         }
 
         await refreshProviders();
-        void loadAccounts();
         return;
       }
 
       setImportStatus("success");
       showToast(t("toastOAuthImportSuccess"), "success");
       await refreshProviders();
-      void loadAccounts();
     } catch {
       setImportStatus("error");
       setImportBulkSummary(null);
@@ -827,16 +718,11 @@ export function OAuthSection({
   };
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      void loadAccounts();
-    }, 0);
-
     return () => {
-      window.clearTimeout(timeoutId);
       stopPolling();
       stopNoCallbackClaimPolling();
     };
-  }, [loadAccounts, stopNoCallbackClaimPolling, stopPolling]);
+  }, [stopNoCallbackClaimPolling, stopPolling]);
 
   const isOAuthSubmitDisabled =
     oauthModalStatus === MODAL_STATUS.LOADING ||
@@ -857,21 +743,9 @@ export function OAuthSection({
             <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t('oauthAccountsTitle')}</h2>
             <p className="text-xs text-[var(--text-muted)]">{t('oauthSectionDescription')}</p>
           </div>
-          <span className="text-xs font-medium text-[var(--text-muted)]">{accounts.length} connected</span>
         </div>
 
         <div className="space-y-3">
-          <OAuthCredentialList
-            accounts={accounts}
-            loading={oauthAccountsLoading}
-            currentUser={currentUser}
-            togglingAccountId={togglingAccountId}
-            claimingAccountName={claimingAccountName}
-            onToggle={toggleOAuthAccount}
-            onDelete={confirmDeleteOAuth}
-            onClaim={claimOAuthAccount}
-          />
-
           <div className="rounded-sm border border-[var(--surface-border)] bg-[var(--surface-base)] p-3 text-xs text-[var(--text-muted)]">
             <strong className="text-[var(--text-primary)]">{t("noteLabel")}</strong>{" "}
             {incognitoBrowserEnabled
@@ -1081,21 +955,6 @@ export function OAuthSection({
           )}
         </ModalFooter>
       </Modal>
-
-      <ConfirmDialog
-        isOpen={showConfirmOAuthDelete}
-        onClose={() => {
-          setShowConfirmOAuthDelete(false);
-          setPendingOAuthDelete(null);
-        }}
-        onConfirm={handleOAuthDelete}
-        title={t("oauthDeleteConfirmTitle")}
-        message={t("oauthDeleteConfirmMessage", { name: pendingOAuthDelete?.accountName ?? "" })}
-        confirmLabel={t("oauthDeleteConfirmButton")}
-        cancelLabel={t("oauthDeleteCancelButton")}
-        variant="danger"
-      />
-
       <OAuthImportForm
         isOpen={isImportModalOpen}
         providerName={importProviderName}
