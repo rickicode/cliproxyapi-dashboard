@@ -26,6 +26,9 @@ interface OAuthCredentialListProps {
   onToggle: (accountId: string, currentlyDisabled: boolean) => void;
   onDelete: (accountId: string) => void;
   onClaim: (accountName: string) => void;
+  showHeader?: boolean;
+  description?: string;
+  emptyMessage?: string;
 }
 
 function parseStatusMessage(raw: string | null): string | null {
@@ -84,7 +87,12 @@ function OAuthStatusBadge({
     );
   }
 
-  return null;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)]" title={status}>
+      <span className="size-1.5 rounded-full bg-[var(--text-muted)]" />
+      {status}
+    </span>
+  );
 }
 
 export type { OAuthAccountWithOwnership };
@@ -98,15 +106,22 @@ export function OAuthCredentialList({
   onToggle,
   onDelete,
   onClaim,
+  showHeader = true,
+  description,
+  emptyMessage,
 }: OAuthCredentialListProps) {
   const t = useTranslations("providers");
+  const resolvedDescription = description ?? t("connectedAccountsDescription");
+  const resolvedEmptyMessage = emptyMessage ?? t("noAccountsConnected");
 
   return (
     <>
-      <div>
-        <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{t("connectedAccountsTitle")}</h3>
-        <p className="mt-1 text-xs text-[var(--text-muted)]">{t("connectedAccountsDescription")}</p>
-      </div>
+      {showHeader ? (
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{t("connectedAccountsTitle")}</h3>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">{resolvedDescription}</p>
+        </div>
+      ) : null}
       {loading ? (
         <div className="flex items-center justify-center rounded-md border border-[var(--surface-border)] bg-[var(--surface-base)] p-8">
           <div className="flex flex-col items-center gap-3">
@@ -116,7 +131,7 @@ export function OAuthCredentialList({
         </div>
       ) : accounts.length === 0 ? (
         <div className="rounded-sm border border-[var(--surface-border)] bg-[var(--surface-base)] p-3 text-xs text-[var(--text-muted)]">
-          {t("noAccountsConnected")}
+          {resolvedEmptyMessage}
         </div>
       ) : (
         <div className="divide-y divide-[var(--surface-border)] rounded-md border border-[var(--surface-border)] bg-[var(--surface-base)]">
