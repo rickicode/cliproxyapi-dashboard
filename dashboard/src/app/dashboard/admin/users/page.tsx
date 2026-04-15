@@ -71,7 +71,7 @@ export default function AdminUsersPage() {
       setFetchError(true);
       setLoading(false);
     }
-  }, [showToast, router]);
+  }, [showToast, router, t]);
 
   useEffect(() => {
     const controller = new AbortController();

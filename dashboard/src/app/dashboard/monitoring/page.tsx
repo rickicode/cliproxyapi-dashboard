@@ -154,7 +154,7 @@ export default function MonitoringPage() {
     const usageInterval = setInterval(fetchUsage, 5000);
 
     return () => clearInterval(usageInterval);
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const checkLoggingStatus = async () => {
@@ -178,7 +178,7 @@ export default function MonitoringPage() {
     };
 
     checkLoggingStatus();
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (loggingState !== LOGGING_STATE.ENABLED) {
@@ -234,7 +234,7 @@ export default function MonitoringPage() {
         logsIntervalRef.current = null;
       }
     };
-  }, [loggingState]);
+  }, [loggingState, t]);
 
   const handleEnableLogging = async () => {
     setEnablingLogging(true);

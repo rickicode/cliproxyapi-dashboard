@@ -232,7 +232,7 @@ Write-Info "Waiting for services to become healthy..."
 Wait-ForHealth
 
 Write-Success "CLIProxyAPI Dashboard is running!"
-Write-Host "  Dashboard: http://localhost:3000"
+Write-Host "  Dashboard: http://localhost:8318"
 Write-Host "  API:       http://localhost:11451"
 Write-Host ""
 Write-Host "  Stop:  .\setup-local.ps1 -Down"

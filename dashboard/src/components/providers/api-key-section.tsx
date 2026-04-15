@@ -209,19 +209,6 @@ export function ApiKeySection({
   }));
   const totalApiKeys = providerStats.reduce((sum, item) => sum + item.count, 0);
 
-  const providerNameKey: Record<string, string> = {
-    [PROVIDER_IDS.CLAUDE]: "claudeName",
-    [PROVIDER_IDS.GEMINI]: "geminiName",
-    [PROVIDER_IDS.CODEX]: "codexName",
-    [PROVIDER_IDS.OPENAI]: "openaiName",
-  };
-  const providerDescKey: Record<string, string> = {
-    [PROVIDER_IDS.CLAUDE]: "claudeDescription",
-    [PROVIDER_IDS.GEMINI]: "geminiDescription",
-    [PROVIDER_IDS.CODEX]: "codexDescription",
-    [PROVIDER_IDS.OPENAI]: "openaiDescription",
-  };
-
   return (
     <>
       <div id="provider-api-keys" className="space-y-3">
