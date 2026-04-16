@@ -147,11 +147,114 @@ interface AuthStatusResponse {
   verification_url?: string;
   user_code?: string;
   url?: string;
+  autoClaim?: OAuthAutoClaimResult;
 }
 
 interface OAuthCallbackResponse {
   status?: number;
   error?: string;
+  autoClaim?: OAuthAutoClaimResult;
+}
+
+interface OAuthAutoClaimCandidate {
+  accountName: string;
+  accountEmail?: string | null;
+  ownerUserId?: string | null;
+  ownerUsername?: string | null;
+}
+
+interface OAuthAutoClaimFailure {
+  code: string;
+  message: string;
+}
+
+export type OAuthAutoClaimResult =
+  | {
+      kind: "claimed";
+      candidate: OAuthAutoClaimCandidate;
+    }
+  | {
+      kind: "already_owned_by_current_user";
+      candidate: OAuthAutoClaimCandidate;
+    }
+  | {
+      kind: "claimed_by_other_user";
+      candidate: OAuthAutoClaimCandidate;
+    }
+  | {
+      kind: "ambiguous";
+      candidates: OAuthAutoClaimCandidate[];
+    }
+  | {
+      kind: "no_match";
+    }
+  | {
+      kind: "error";
+      failure: OAuthAutoClaimFailure;
+    };
+
+interface OAuthConnectSuccessFeedback {
+  toastMessage: string;
+  detailMessage: string;
+  strongClaimSuccess: boolean;
+}
+
+type ProviderTranslator = (key: string, values?: Record<string, string | number>) => string;
+
+function getAutoClaimOwnerLabel(candidate: OAuthAutoClaimCandidate, t: ProviderTranslator): string {
+  return candidate.ownerUsername || candidate.accountName || t("unknownLabel");
+}
+
+export function getOAuthConnectSuccessFeedback(
+  autoClaim: OAuthAutoClaimResult | undefined,
+  t: ProviderTranslator
+): OAuthConnectSuccessFeedback {
+  switch (autoClaim?.kind) {
+    case "claimed":
+      return {
+        toastMessage: t("toastOAuthConnectedClaimed"),
+        detailMessage: t("oauthSuccessClaimedMsg"),
+        strongClaimSuccess: true,
+      };
+    case "already_owned_by_current_user":
+      return {
+        toastMessage: t("toastOAuthConnectedAlreadyOwned"),
+        detailMessage: t("oauthSuccessAlreadyOwnedMsg"),
+        strongClaimSuccess: false,
+      };
+    case "claimed_by_other_user": {
+      const owner = getAutoClaimOwnerLabel(autoClaim.candidate, t);
+      return {
+        toastMessage: t("toastOAuthConnectedClaimedByOtherUser", { owner }),
+        detailMessage: t("oauthSuccessClaimedByOtherUserMsg", { owner }),
+        strongClaimSuccess: false,
+      };
+    }
+    case "ambiguous":
+      return {
+        toastMessage: t("toastOAuthConnectedAmbiguous"),
+        detailMessage: t("oauthSuccessAmbiguousMsg"),
+        strongClaimSuccess: false,
+      };
+    case "no_match":
+      return {
+        toastMessage: t("toastOAuthConnectedNoMatch"),
+        detailMessage: t("oauthSuccessNoMatchMsg"),
+        strongClaimSuccess: false,
+      };
+    case "error":
+      return {
+        toastMessage: t("toastOAuthConnectedClaimCheckFailed"),
+        detailMessage: t("oauthSuccessClaimCheckFailedMsg"),
+        strongClaimSuccess: false,
+      };
+    default:
+      return {
+        toastMessage: t("toastOAuthConnected"),
+        detailMessage: t("oauthSuccessMsg"),
+        strongClaimSuccess: false,
+      };
+  }
 }
 
 const getOAuthProviderById = (id: OAuthProviderId | null) =>
@@ -206,6 +309,8 @@ export function OAuthSection({
   const [callbackValidation, setCallbackValidation] = useState<CallbackValidation>(CALLBACK_VALIDATION.EMPTY);
   const [callbackMessage, setCallbackMessage] = useState("");
   const [oauthErrorMessage, setOauthErrorMessage] = useState<string | null>(null);
+  const [oauthSuccessMessage, setOauthSuccessMessage] = useState<string | null>(null);
+  const [oauthStrongClaimSuccess, setOauthStrongClaimSuccess] = useState(false);
   const [authLaunchUrl, setAuthLaunchUrl] = useState<string | null>(null);
   const pollingIntervalRef = useRef<number | null>(null);
   const pollingAttemptsRef = useRef(0);
@@ -300,9 +405,12 @@ export function OAuthSection({
         }
 
         if (data.status === "ok") {
+          const feedback = getOAuthConnectSuccessFeedback(data.autoClaim, t);
           stopPolling();
           setOauthModalStatus(MODAL_STATUS.SUCCESS);
-          showToast(t("toastOAuthConnected"), "success");
+          setOauthSuccessMessage(feedback.detailMessage);
+          setOauthStrongClaimSuccess(feedback.strongClaimSuccess);
+          showToast(feedback.toastMessage, "success");
           await refreshProviders();
           return;
         }
@@ -332,6 +440,8 @@ export function OAuthSection({
     setCallbackValidation(CALLBACK_VALIDATION.EMPTY);
     setCallbackMessage(t("callbackMsgEmpty"));
     setOauthErrorMessage(null);
+    setOauthSuccessMessage(null);
+    setOauthStrongClaimSuccess(false);
     setAuthLaunchUrl(null);
     setDeviceCodeInfo(null);
     deviceCodePopupOpenedRef.current = false;
@@ -401,6 +511,8 @@ export function OAuthSection({
     setIsOAuthModalOpen(true);
     setOauthModalStatus(MODAL_STATUS.LOADING);
     setOauthErrorMessage(null);
+    setOauthSuccessMessage(null);
+    setOauthStrongClaimSuccess(false);
     setCallbackUrl("");
     setCallbackValidation(CALLBACK_VALIDATION.EMPTY);
     setCallbackMessage(t("callbackMsgEmpty"));
@@ -920,8 +1032,12 @@ export function OAuthSection({
           )}
 
           {oauthModalStatus === MODAL_STATUS.SUCCESS && (
-            <div className="rounded-xl border-l-4 border-green-300 bg-green-500/10 p-4 text-sm text-green-700">
-              OAuth account connected successfully.
+            <div className={`rounded-xl border-l-4 p-4 text-sm ${
+              oauthStrongClaimSuccess
+                ? "border-green-300 bg-green-500/10 text-green-700"
+                : "border-emerald-300 bg-emerald-500/10 text-emerald-800"
+            }`}>
+              {oauthSuccessMessage ?? t("oauthSuccessMsg")}
             </div>
           )}
 

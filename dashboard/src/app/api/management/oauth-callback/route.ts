@@ -6,6 +6,11 @@ import { Errors } from "@/lib/errors";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
 import { logger } from "@/lib/logger";
+import {
+  classifyOAuthAutoClaim,
+  type OAuthAutoClaimCandidate,
+  type OAuthAutoClaimClassification,
+} from "@/lib/providers/oauth-auto-claim";
 
 const PROVIDERS = {
   CLAUDE: "claude",
@@ -73,6 +78,22 @@ interface AuthFileEntry {
   type?: string;
   email?: string;
 }
+
+interface OAuthOwnershipRecord {
+  accountName: string;
+  userId: string;
+  user?: {
+    id: string;
+    username: string | null;
+  } | null;
+}
+
+type OAuthCallbackAutoClaimResponse =
+  | {
+    kind: "claimed";
+    candidate: OAuthAutoClaimCandidate;
+  }
+  | OAuthAutoClaimClassification;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -218,6 +239,83 @@ const findUnclaimedAuthFiles = async (
   return providerFiles.filter((f) => !ownedNames.has(f.name));
 };
 
+const buildAutoClaimCandidates = (
+  files: AuthFileEntry[],
+  ownerships: OAuthOwnershipRecord[]
+): OAuthAutoClaimCandidate[] => {
+  const ownershipMap = new Map(ownerships.map((ownership) => [ownership.accountName, ownership]));
+
+  return files.map((file) => {
+    const ownership = ownershipMap.get(file.name);
+    return {
+      accountName: file.name,
+      accountEmail: file.email || null,
+      ownerUserId: ownership?.userId ?? null,
+      ownerUsername: ownership?.user?.username ?? null,
+    };
+  });
+};
+
+const fetchOwnershipRecords = async (accountNames: string[]): Promise<OAuthOwnershipRecord[]> => {
+  if (accountNames.length === 0) return [];
+
+  const ownerships = await prisma.providerOAuthOwnership.findMany({
+    where: { accountName: { in: accountNames } },
+    include: { user: { select: { id: true, username: true } } },
+  });
+
+  return ownerships as OAuthOwnershipRecord[];
+};
+
+const normalizeAutoClaimResult = async ({
+  currentUserId,
+  candidateFiles,
+}: {
+  currentUserId: string;
+  candidateFiles: AuthFileEntry[];
+}): Promise<OAuthCallbackAutoClaimResponse> => {
+  try {
+    const candidates = buildAutoClaimCandidates(
+      candidateFiles,
+      await fetchOwnershipRecords(candidateFiles.map((file) => file.name))
+    );
+
+    const classification = classifyOAuthAutoClaim({
+      currentUserId,
+      candidates,
+    });
+
+    if (classification.kind !== "claimable") {
+      return classification;
+    }
+
+    return {
+      kind: "claimed",
+      candidate: {
+        ...classification.candidate,
+        ownerUserId: currentUserId,
+      },
+    };
+  } catch (error) {
+    logger.warn(
+      {
+        err: error,
+        accountNames: candidateFiles.map((file) => file.name),
+      },
+      "OAuth callback: failed to normalize auto-claim candidates"
+    );
+
+    return classifyOAuthAutoClaim({
+      currentUserId,
+      candidates: [],
+      failure: {
+        code: "ownership_lookup_failed",
+        message: "Failed to evaluate OAuth auto-claim candidates",
+      },
+    });
+  }
+};
+
 export async function POST(request: NextRequest) {
   const session = await verifySession();
 
@@ -341,15 +439,26 @@ export async function POST(request: NextRequest) {
           break;
         }
 
-        if (unclaimedCandidates.length > 1 && preCallbackNames) {
-          const newAndUnclaimed = unclaimedCandidates.filter(
-            (f) => !preCallbackNames.has(f.name)
-          );
-          if (newAndUnclaimed.length === 1) {
-            candidateFiles = newAndUnclaimed;
+        if (unclaimedCandidates.length > 1) {
+          if (PROVIDERS_WITH_CALLBACK.has(provider) && preCallbackNames) {
+            const newAndUnclaimed = unclaimedCandidates.filter(
+              (f) => !preCallbackNames.has(f.name)
+            );
+            if (newAndUnclaimed.length === 1) {
+              candidateFiles = newAndUnclaimed;
+              logger.info(
+                { provider, strategy: "unclaimed-new", name: newAndUnclaimed[0].name },
+                "OAuth callback: matched single new unclaimed auth file"
+              );
+              break;
+            }
+          }
+
+          if (!PROVIDERS_WITH_CALLBACK.has(provider)) {
+            candidateFiles = unclaimedCandidates;
             logger.info(
-              { provider, strategy: "unclaimed-new", name: newAndUnclaimed[0].name },
-              "OAuth callback: matched single new unclaimed auth file"
+              { provider, strategy: "unclaimed-ambiguous", count: unclaimedCandidates.length },
+              "OAuth callback: multiple unclaimed auth files found without safe newness signal"
             );
             break;
           }
@@ -357,51 +466,64 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    let autoClaim: OAuthCallbackAutoClaimResponse;
+
     if (candidateFiles.length === 0) {
       logger.warn(
         { provider, state: resolvedState || null, preSnapshotCount: preCallbackFiles?.length ?? -1 },
-        "OAuth callback: auth file not yet available, client should retry"
+        "OAuth callback: no auth file candidates found after successful connect"
       );
-      return NextResponse.json({ status: 202 }, { status: 202 });
-    }
+      autoClaim = classifyOAuthAutoClaim({
+        currentUserId: session.userId,
+        candidates: [],
+      });
+    } else {
+      const initialAutoClaim = await normalizeAutoClaimResult({
+        currentUserId: session.userId,
+        candidateFiles,
+      });
 
-    let claimed = false;
-    for (const file of candidateFiles) {
-      if (claimed) break;
-      try {
-        await prisma.providerOAuthOwnership.create({
-          data: {
-            userId: session.userId,
-            provider,
-            accountName: file.name,
-            accountEmail: file.email || null,
-          },
-        });
-        claimed = true;
-        logger.info(
-          { provider, accountName: file.name, userId: session.userId },
-          "OAuth callback: ownership claimed successfully"
-        );
-      } catch (e) {
-        if (
-          e instanceof Prisma.PrismaClientKnownRequestError &&
-          e.code === "P2002"
-        ) {
-          continue;
+      if (initialAutoClaim.kind === "claimed") {
+        const candidate = initialAutoClaim.candidate;
+
+        try {
+          await prisma.providerOAuthOwnership.create({
+            data: {
+              userId: session.userId,
+              provider,
+              accountName: candidate.accountName,
+              accountEmail: candidate.accountEmail || null,
+            },
+          });
+
+          logger.info(
+            { provider, accountName: candidate.accountName, userId: session.userId },
+            "OAuth callback: ownership claimed successfully"
+          );
+
+          autoClaim = initialAutoClaim;
+        } catch (e) {
+          if (
+            e instanceof Prisma.PrismaClientKnownRequestError &&
+            e.code === "P2002"
+          ) {
+            autoClaim = await normalizeAutoClaimResult({
+              currentUserId: session.userId,
+              candidateFiles,
+            });
+          } else {
+            throw e;
+          }
         }
-        throw e;
+      } else {
+        autoClaim = initialAutoClaim;
       }
     }
 
-    if (!claimed) {
-      logger.warn(
-        { provider, candidateCount: candidateFiles.length, userId: session.userId },
-        "OAuth callback: all candidate files already owned"
-      );
-      return NextResponse.json({ status: 409 }, { status: 409 });
-    }
-
-    const payload: OAuthCallbackResponse = { status: responseStatus };
+    const payload: OAuthCallbackResponse & { autoClaim: OAuthCallbackAutoClaimResponse } = {
+      status: responseStatus,
+      autoClaim,
+    };
 
     return NextResponse.json(payload, { status: responseStatus });
   } catch (error) {
