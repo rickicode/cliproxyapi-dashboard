@@ -1,17 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
 import { HelpTooltip } from "@/components/ui/tooltip";
+import { QuotaToolbar } from "@/components/quota/quota-toolbar";
 import { useQuotaDetailData, useQuotaSummaryData } from "@/hooks/use-quota-data";
 import {
+  enrichModelFirstGroup,
+  isModelFirstAccount,
+  isModelFirstAccountQuotaUnverified,
   isModelFirstProviderQuotaUnverified,
+  normalizeFraction,
+  summarizeModelFirstProvider,
+  type QuotaAccount,
   type ModelFirstProviderSummary,
 } from "@/lib/model-first-monitoring";
 import { formatRelativeTime } from "@/lib/format-relative-time";
+import {
+  buildQuotaSearch,
+  DEFAULT_QUOTA_QUERY_STATE,
+  parseQuotaQueryState,
+  type QuotaQueryProvider,
+  type QuotaQueryState,
+  type QuotaQueryStatus,
+} from "@/lib/quota/query-state";
+import { getQuotaProviderLabel, normalizeQuotaProvider } from "@/lib/quota/provider";
 
 const QuotaChart = dynamic(
   () => import("@/components/quota/quota-chart").then((mod) => ({ default: mod.QuotaChart })),
@@ -20,30 +37,284 @@ const QuotaChart = dynamic(
 import { QuotaDetails } from "@/components/quota/quota-details";
 import { QuotaAlerts } from "@/components/quota/quota-alerts";
 
-const PROVIDERS = {
-  ALL: "all",
-  ANTIGRAVITY: "antigravity",
-  CLAUDE: "claude",
-  CODEX: "codex",
-  COPILOT: "github-copilot",
-  KIMI: "kimi",
-} as const;
-
-type ProviderType = (typeof PROVIDERS)[keyof typeof PROVIDERS];
+export const QUOTA_ACCOUNTS_PAGE_SIZE = 25;
 
 type ProviderSummary = NonNullable<ReturnType<typeof useQuotaSummaryData>["data"]>["providers"][number];
+type QuotaSummaryWarning = NonNullable<ReturnType<typeof useQuotaSummaryData>["data"]>["warnings"][number];
 
-export function matchesSelectedProvider(provider: string, selectedProvider: ProviderType): boolean {
-  if (selectedProvider === PROVIDERS.ALL) return true;
-  if (selectedProvider === PROVIDERS.COPILOT) {
-    return provider === "github" || provider === "github-copilot" || provider === "copilot";
-  }
-  return provider === selectedProvider;
+interface DerivedProviderSummary {
+  provider: string;
+  monitorMode: "window-based" | "model-first";
+  totalAccounts: number;
+  activeAccounts: number;
+  healthyAccounts: number;
+  errorAccounts: number;
+  windowCapacities: Array<{ id: string; label: string; capacity: number; resetTime: string | null; isShortTerm: boolean }>;
+  modelFirstSummary?: ModelFirstProviderSummary;
+  lowCapacity: boolean;
 }
 
-function capitalizeProvider(provider: string): string {
-  if (provider === "github-copilot") return "Copilot";
-  return provider.charAt(0).toUpperCase() + provider.slice(1);
+export function matchesSelectedProvider(provider: string, selectedProvider: QuotaQueryProvider): boolean {
+  if (selectedProvider === "all") return true;
+  return normalizeQuotaProvider(provider) === normalizeQuotaProvider(selectedProvider);
+}
+
+function getQuotaAccountStatus(account: QuotaAccount): QuotaQueryStatus {
+  if (!account.supported) return "disabled";
+  if (account.error) return "error";
+
+  if (isModelFirstAccount(account)) {
+    const summary = summarizeModelFirstProvider([account]);
+    if (isModelFirstProviderQuotaUnverified(summary)) return "warning";
+    const accountSummary = account.groups ? account : { ...account, groups: [] };
+    if (isModelFirstAccountQuotaUnverified(accountSummary)) return "warning";
+  }
+
+  const fractions = (account.groups ?? [])
+    .map((group) => {
+      const normalizedGroup = isModelFirstAccount(account)
+        ? enrichModelFirstGroup(group)
+        : group;
+      return normalizeFraction(normalizedGroup.minRemainingFraction ?? normalizedGroup.remainingFraction);
+    })
+    .filter((value): value is number => value !== null);
+
+  if (fractions.length > 0 && Math.min(...fractions) < 0.2) return "warning";
+
+  return "active";
+}
+
+function matchesQuotaSearch(account: QuotaAccount, query: string) {
+  if (!query) return true;
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+
+  const haystack = [account.email, account.provider, normalizeQuotaProvider(account.provider), account.auth_index]
+    .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+    .join(" ")
+    .toLowerCase();
+
+  return haystack.includes(normalizedQuery);
+}
+
+function matchesQuotaStatus(account: QuotaAccount, status: QuotaQueryStatus) {
+  if (status === "all") return true;
+  return getQuotaAccountStatus(account) === status;
+}
+
+export function filterQuotaAccounts(accounts: QuotaAccount[], query: QuotaQueryState) {
+  return accounts.filter(
+    (account) =>
+      matchesSelectedProvider(account.provider, query.provider) &&
+      matchesQuotaSearch(account, query.q) &&
+      matchesQuotaStatus(account, query.status)
+  );
+}
+
+function buildDerivedProviderSummary(provider: string, accounts: QuotaAccount[]): DerivedProviderSummary {
+  const modelFirstOnly = accounts.length > 0 && accounts.every((account) => isModelFirstAccount(account));
+
+  if (modelFirstOnly) {
+    const modelFirstSummary = summarizeModelFirstProvider(accounts);
+    return {
+      provider,
+      monitorMode: "model-first",
+      totalAccounts: accounts.length,
+      activeAccounts: accounts.filter((account) => account.supported && !account.error).length,
+      healthyAccounts: accounts.filter((account) => account.supported && !account.error).length,
+      errorAccounts: accounts.filter((account) => Boolean(account.error)).length,
+      windowCapacities: [],
+      modelFirstSummary,
+      lowCapacity: !isModelFirstProviderQuotaUnverified(modelFirstSummary) && (modelFirstSummary.minRemainingFraction ?? 1) < 0.2,
+    };
+  }
+
+  const windowGroups = new Map<string, { id: string; label: string; capacities: number[]; resetTime: string | null; isShortTerm: boolean }>();
+
+  for (const account of accounts) {
+    for (const group of account.groups ?? []) {
+      const capacity = normalizeFraction(group.remainingFraction);
+      if (capacity === null) continue;
+      const existing = windowGroups.get(group.id) ?? {
+        id: group.id,
+        label: group.label,
+        capacities: [],
+        resetTime: group.resetTime,
+        isShortTerm: /short|burst|minute|hour/i.test(group.id) || /short|burst|minute|hour/i.test(group.label),
+      };
+      existing.capacities.push(capacity);
+      existing.resetTime = existing.resetTime ?? group.resetTime;
+      windowGroups.set(group.id, existing);
+    }
+  }
+
+  const windowCapacities = Array.from(windowGroups.values()).map((group) => ({
+    id: group.id,
+    label: group.label,
+    capacity: Math.min(...group.capacities),
+    resetTime: group.resetTime,
+    isShortTerm: group.isShortTerm,
+  }));
+
+  return {
+    provider,
+    monitorMode: "window-based",
+    totalAccounts: accounts.length,
+    activeAccounts: accounts.filter((account) => account.supported && !account.error).length,
+    healthyAccounts: accounts.filter((account) => account.supported && !account.error).length,
+    errorAccounts: accounts.filter((account) => Boolean(account.error)).length,
+    windowCapacities,
+    lowCapacity: windowCapacities.some((window) => window.capacity < 0.2),
+  };
+}
+
+export function buildQuotaPageViewModel({
+  accounts,
+  summaryWarnings,
+  query,
+}: {
+  accounts: QuotaAccount[];
+  summaryWarnings: QuotaSummaryWarning[];
+  query: QuotaQueryState;
+}) {
+  const filteredAccounts = filterQuotaAccounts(accounts, query);
+  const totalPages = Math.max(1, Math.ceil(filteredAccounts.length / QUOTA_ACCOUNTS_PAGE_SIZE));
+  const currentPage = Math.min(Math.max(1, query.page), totalPages);
+  const pageStart = (currentPage - 1) * QUOTA_ACCOUNTS_PAGE_SIZE;
+  const paginatedAccounts = filteredAccounts.slice(pageStart, pageStart + QUOTA_ACCOUNTS_PAGE_SIZE);
+  const providerBuckets = new Map<string, QuotaAccount[]>();
+
+  for (const account of filteredAccounts) {
+    const canonicalProvider = normalizeQuotaProvider(account.provider);
+    const bucket = providerBuckets.get(canonicalProvider) ?? [];
+    bucket.push(account);
+    providerBuckets.set(canonicalProvider, bucket);
+  }
+
+  const providerSummaries = Array.from(providerBuckets.entries())
+    .map(([provider, providerAccounts]) => buildDerivedProviderSummary(provider, providerAccounts))
+    .sort((left, right) => left.provider.localeCompare(right.provider));
+
+  return {
+    filteredAccounts,
+    paginatedAccounts,
+    providerSummaries,
+    toolbarTotal: filteredAccounts.length,
+    activeAccounts: filteredAccounts.filter((account) => account.supported && !account.error).length,
+    lowCapacityCount: filteredAccounts.filter((account) => getQuotaAccountStatus(account) === "warning").length,
+    modelFirstWarnings: summaryWarnings.filter((warning) => matchesSelectedProvider(warning.provider, query.provider)),
+    currentPage,
+    totalPages,
+    hasAnyAccounts: accounts.length > 0,
+  };
+}
+
+export function buildQuotaSummaryFallbackViewModel({
+  providerSummaries,
+  summaryWarnings,
+  query,
+}: {
+  providerSummaries: ProviderSummary[];
+  summaryWarnings: QuotaSummaryWarning[];
+  query: QuotaQueryState;
+}) {
+  const filteredProviderSummaries = Array.from(
+    providerSummaries
+      .filter((summary) => matchesSelectedProvider(summary.provider, query.provider))
+      .reduce<Map<string, ProviderSummary[]>>((buckets, summary) => {
+        const canonicalProvider = normalizeQuotaProvider(summary.provider);
+        const bucket = buckets.get(canonicalProvider) ?? [];
+        bucket.push(summary);
+        buckets.set(canonicalProvider, bucket);
+        return buckets;
+      }, new Map())
+      .entries()
+  )
+    .map(([provider, summaries]) => {
+      const mergedSummary = {
+        ...summaries[0],
+        provider,
+        totalAccounts: summaries.reduce((sum, summary) => sum + summary.totalAccounts, 0),
+        activeAccounts: summaries.reduce((sum, summary) => sum + summary.activeAccounts, 0),
+        healthyAccounts: summaries.reduce((sum, summary) => sum + summary.healthyAccounts, 0),
+        errorAccounts: summaries.reduce((sum, summary) => sum + summary.errorAccounts, 0),
+        lowCapacity: summaries.some((summary) => summary.lowCapacity),
+      } satisfies ProviderSummary;
+
+      const allModelFirst = summaries.every((summary) => summary.monitorMode === "model-first" && summary.modelFirstSummary);
+
+      if (allModelFirst) {
+        return {
+          ...mergedSummary,
+          monitorMode: "model-first" as const,
+          windowCapacities: [],
+          modelFirstSummary: aggregateModelFirstSummaries(
+            summaries.map((summary) => ({
+              provider,
+              modelFirstSummary: summary.modelFirstSummary,
+            }))
+          ) ?? undefined,
+        } satisfies ProviderSummary;
+      }
+
+      const windowCapacities = Array.from(
+        summaries
+          .flatMap((summary) => summary.windowCapacities)
+          .reduce<
+            Map<string, { id: string; label: string; capacity: number; resetTime: string | null; isShortTerm: boolean }>
+          >((windows, window) => {
+            const existing = windows.get(window.id);
+
+            if (!existing) {
+              windows.set(window.id, { ...window });
+              return windows;
+            }
+
+            windows.set(window.id, {
+              ...existing,
+              capacity: Math.min(existing.capacity, window.capacity),
+              resetTime: existing.resetTime ?? window.resetTime,
+              isShortTerm: existing.isShortTerm || window.isShortTerm,
+            });
+            return windows;
+          }, new Map())
+          .values()
+      );
+
+      return {
+        ...mergedSummary,
+        provider,
+        monitorMode: "window-based" as const,
+        windowCapacities,
+        modelFirstSummary: undefined,
+      } satisfies ProviderSummary;
+    })
+    .sort((left, right) => left.provider.localeCompare(right.provider));
+
+  return {
+    filteredAccounts: [] as QuotaAccount[],
+    paginatedAccounts: [] as QuotaAccount[],
+    providerSummaries: filteredProviderSummaries,
+    toolbarTotal: filteredProviderSummaries.reduce((sum, summary) => sum + summary.totalAccounts, 0),
+    activeAccounts: filteredProviderSummaries.reduce((sum, summary) => sum + summary.activeAccounts, 0),
+    lowCapacityCount: filteredProviderSummaries.filter((summary) => summary.lowCapacity).length,
+    modelFirstWarnings: summaryWarnings.filter((warning) => matchesSelectedProvider(warning.provider, query.provider)),
+    currentPage: 1,
+    totalPages: 1,
+    hasAnyAccounts: filteredProviderSummaries.reduce((sum, summary) => sum + summary.totalAccounts, 0) > 0,
+  };
+}
+
+export function buildQuotaToolbarQuery(query: QuotaQueryState, updates: Partial<Pick<QuotaQueryState, "q" | "provider" | "status">>) {
+  return {
+    ...query,
+    ...updates,
+    page: 1,
+  };
+}
+
+export function clearQuotaToolbarQuery(_query: QuotaQueryState): QuotaQueryState {
+  return { ...DEFAULT_QUOTA_QUERY_STATE };
 }
 
 function pickIso(values: Array<string | null | undefined>, mode: "min" | "max"): string | null {
@@ -57,7 +328,9 @@ function pickIso(values: Array<string | null | undefined>, mode: "min" | "max"):
   return new Date(timestamp).toISOString();
 }
 
-function aggregateModelFirstSummaries(summaries: ProviderSummary[]): ModelFirstProviderSummary | null {
+function aggregateModelFirstSummaries(
+  summaries: Array<Pick<DerivedProviderSummary, "provider" | "modelFirstSummary">>
+): ModelFirstProviderSummary | null {
   if (summaries.length === 0 || summaries.some((summary) => !summary.modelFirstSummary)) {
     return null;
   }
@@ -83,7 +356,7 @@ function aggregateModelFirstSummaries(summaries: ProviderSummary[]): ModelFirstP
     nextRecoveryAt: pickIso(modelFirstSummaries.map((summary) => summary.nextRecoveryAt), "min"),
     groups: modelFirstSummaries.flatMap((summary, index) => {
       const provider = summaries[index]?.provider ?? "unknown";
-      const prefix = summaries.length > 1 ? `${capitalizeProvider(provider)} — ` : "";
+      const prefix = summaries.length > 1 ? `${getQuotaProviderLabel(provider)} — ` : "";
       return summary.groups.map((group) => ({
         ...group,
         id: `${provider}:${group.id}`,
@@ -160,6 +433,9 @@ export async function refreshAllQuotaData(
 
 export default function QuotaPage() {
   const t = useTranslations("quota");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const {
     data: quotaSummary,
     isLoading: summaryLoading,
@@ -172,45 +448,66 @@ export default function QuotaPage() {
     error: detailError,
     refresh: refreshDetail,
   } = useQuotaDetailData({ refreshInterval: 120_000 });
-  const [selectedProvider, setSelectedProvider] = useState<ProviderType>(PROVIDERS.ALL);
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const query = useMemo(() => parseQuotaQueryState(searchParams), [searchParams]);
 
   const loading = summaryLoading;
+  const replaceQuery = (nextQuery: QuotaQueryState) => {
+    const nextSearch = buildQuotaSearch(nextQuery);
+    router.replace(`${pathname}${nextSearch}`, { scroll: false });
+  };
+
   const refreshAll = async () => {
     await refreshAllQuotaData(refreshSummary, refreshDetail);
   };
 
-  const filteredAccounts =
-    quotaDetail?.accounts.filter((account) => {
-      return matchesSelectedProvider(account.provider, selectedProvider);
-    }) ?? [];
+  const summaryFirst = Boolean(quotaSummary) && (detailLoading || !quotaDetail || Boolean(detailError));
+  const {
+    filteredAccounts,
+    paginatedAccounts,
+    providerSummaries,
+    toolbarTotal,
+    activeAccounts,
+    lowCapacityCount,
+    modelFirstWarnings,
+    currentPage,
+    totalPages,
+    hasAnyAccounts,
+  } = useMemo(() => {
+    if (summaryFirst && quotaSummary) {
+      return buildQuotaSummaryFallbackViewModel({
+        providerSummaries: quotaSummary.providers,
+        summaryWarnings: quotaSummary.warnings,
+        query,
+      });
+    }
 
-  const providerSummaries = quotaSummary?.providers ?? [];
-  const selectedProviderSummaries = providerSummaries.filter((summary) =>
-    matchesSelectedProvider(summary.provider, selectedProvider)
-  );
-  const activeAccounts = selectedProviderSummaries.reduce((sum, summary) => sum + summary.activeAccounts, 0);
+    return buildQuotaPageViewModel({
+      accounts: quotaDetail?.accounts ?? [],
+      summaryWarnings: quotaSummary?.warnings ?? [],
+      query,
+    });
+  }, [summaryFirst, quotaDetail?.accounts, quotaSummary, quotaSummary?.warnings, query]);
 
-  const overallCapacity = calcOverallCapacity(selectedProviderSummaries, t("noData"), t("weightedCapacity"));
+  const replacePage = (page: number) => {
+    replaceQuery({ ...query, page });
+  };
+
+  const normalizedSearch = buildQuotaSearch({ ...query, page: currentPage });
+  const currentSearch = searchParams.toString();
+  const expectedSearch = normalizedSearch.startsWith("?") ? normalizedSearch.slice(1) : normalizedSearch;
+
+  useEffect(() => {
+    if (currentSearch !== expectedSearch) {
+      router.replace(`${pathname}${normalizedSearch}`, { scroll: false });
+    }
+  }, [currentSearch, expectedSearch, normalizedSearch, pathname, router]);
+
+  const overallCapacity = calcOverallCapacity(providerSummaries, t("noData"), t("weightedCapacity"));
   const isModelFirstOnlyView =
-    selectedProviderSummaries.length > 0 &&
-    selectedProviderSummaries.every((summary) => summary.monitorMode === "model-first");
-  const modelFirstSummary = isModelFirstOnlyView ? aggregateModelFirstSummaries(selectedProviderSummaries) : null;
+    providerSummaries.length > 0 && providerSummaries.every((summary) => summary.monitorMode === "model-first");
+  const modelFirstSummary = isModelFirstOnlyView ? aggregateModelFirstSummaries(providerSummaries) : null;
   const modelFirstQuotaUnverified = isModelFirstProviderQuotaUnverified(modelFirstSummary);
-  const modelFirstWarnings = (quotaSummary?.warnings ?? []).filter((warning) =>
-    matchesSelectedProvider(warning.provider, selectedProvider)
-  );
-
-  const lowCapacityCount = selectedProviderSummaries.filter((summary) => summary.lowCapacity).length;
-
-  const providerFilters = [
-    { key: PROVIDERS.ALL, label: t("filterAll") },
-    { key: PROVIDERS.ANTIGRAVITY, label: t("filterAntigravity") },
-    { key: PROVIDERS.CLAUDE, label: t("filterClaude") },
-    { key: PROVIDERS.CODEX, label: t("filterCodex") },
-    { key: PROVIDERS.COPILOT, label: t("filterCopilot") },
-    { key: PROVIDERS.KIMI, label: t("filterKimi") },
-  ];
 
   const toggleCard = (accountId: string) => {
     setExpandedCards((previous) => ({ ...previous, [accountId]: !previous[accountId] }));
@@ -231,33 +528,21 @@ export default function QuotaPage() {
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-            <div className="flex flex-wrap gap-1">
-              {providerFilters.map((filter) => (
-                <Button
-                  key={filter.key}
-                  variant={selectedProvider === filter.key ? "secondary" : "ghost"}
-                  onClick={() => {
-                    setSelectedProvider(filter.key);
-                    if (filter.key !== PROVIDERS.ALL) {
-                      setTimeout(() => {
-                        document
-                          .getElementById("quota-accounts")
-                          ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                      }, 50);
-                    }
-                  }}
-                  className="px-2.5 py-1 text-xs"
-                >
-                  {filter.label}
-                </Button>
-              ))}
-            </div>
             <Button onClick={() => void refreshAll()} disabled={summaryLoading || detailLoading} className="px-2.5 py-1 text-xs">
               {loading ? t("loadingText") : t("refreshButton")}
             </Button>
           </div>
         </div>
       </section>
+
+      <QuotaToolbar
+        query={query}
+        total={toolbarTotal ?? filteredAccounts.length}
+        onSearchChange={(value) => replaceQuery(buildQuotaToolbarQuery(query, { q: value }))}
+        onProviderChange={(value) => replaceQuery(buildQuotaToolbarQuery(query, { provider: value }))}
+        onStatusChange={(value) => replaceQuery(buildQuotaToolbarQuery(query, { status: value }))}
+        onClear={() => replaceQuery(clearQuotaToolbarQuery(query))}
+      />
 
       {loading && !quotaSummary ? (
         <div className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-base)] p-6 text-center text-sm text-[var(--text-muted)]">
@@ -274,7 +559,7 @@ export default function QuotaPage() {
               {modelFirstWarnings.map(({ provider, count }) => (
                 <p key={provider}>
                   {t("modelFirstWarning", {
-                    provider: provider.charAt(0).toUpperCase() + provider.slice(1),
+                    provider: getQuotaProviderLabel(provider),
                     count,
                   })}
                 </p>
@@ -342,7 +627,7 @@ export default function QuotaPage() {
                 </div>
                 <div className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-base)] px-2.5 py-2">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{t("providersLabel")}</p>
-                  <p className="mt-0.5 text-xs font-semibold text-[var(--text-primary)]">{selectedProviderSummaries.length}</p>
+                  <p className="mt-0.5 text-xs font-semibold text-[var(--text-primary)]">{providerSummaries.length}</p>
                 </div>
               </>
             )}
@@ -350,13 +635,17 @@ export default function QuotaPage() {
 
           <QuotaChart
             overallCapacity={overallCapacity}
-            providerSummaries={selectedProviderSummaries}
+            providerSummaries={providerSummaries}
             modelFirstSummary={modelFirstSummary}
             modelFirstOnlyView={isModelFirstOnlyView}
           />
 
           <QuotaDetails
-            filteredAccounts={filteredAccounts}
+            filteredAccounts={paginatedAccounts}
+            hasAnyAccounts={hasAnyAccounts}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={replacePage}
             expandedCards={expandedCards}
             onToggleCard={toggleCard}
             loading={detailLoading}

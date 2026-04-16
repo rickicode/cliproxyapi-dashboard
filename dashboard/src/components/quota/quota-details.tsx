@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/format-relative-time";
+import { getQuotaProviderLabel, normalizeQuotaProvider } from "@/lib/quota/provider";
 import { isShortTermQuotaWindow } from "@/lib/quota-window-classification";
 import {
   enrichModelFirstGroup,
@@ -53,6 +54,10 @@ function getCapacityBarClass(value: number): string {
 
 interface QuotaDetailsProps {
   filteredAccounts: QuotaAccount[];
+  hasAnyAccounts?: boolean;
+  currentPage?: number;
+  totalPages?: number;
+  onPageChange?: (page: number) => void;
   expandedCards: Record<string, boolean>;
   onToggleCard: (accountId: string) => void;
   loading: boolean;
@@ -62,6 +67,10 @@ interface QuotaDetailsProps {
 
 export function QuotaDetails({
   filteredAccounts,
+  hasAnyAccounts = true,
+  currentPage = 1,
+  totalPages = 1,
+  onPageChange,
   expandedCards,
   onToggleCard,
   loading,
@@ -92,11 +101,9 @@ export function QuotaDetails({
     const buckets = new Map<string, { key: string; title: string; accounts: QuotaAccount[]; modelFirstView: boolean }>();
     for (const account of filteredAccounts) {
       const sectionModelFirstView = isModelFirstAccount(account);
-      const providerTitle =
-        account.provider === "github-copilot"
-          ? "Copilot"
-          : account.provider.charAt(0).toUpperCase() + account.provider.slice(1);
-      const key = `${sectionModelFirstView ? "model-first" : "window-based"}:${account.provider}`;
+      const canonicalProvider = normalizeQuotaProvider(account.provider);
+      const providerTitle = getQuotaProviderLabel(account.provider);
+      const key = `${sectionModelFirstView ? "model-first" : "window-based"}:${canonicalProvider}`;
       const bucket = buckets.get(key) ?? {
         key,
         title: providerTitle,
@@ -179,7 +186,7 @@ export function QuotaDetails({
                       >
                         <span className={cn("text-xs text-[var(--text-muted)] transition-transform", isRowExpanded && "rotate-180")}>⌄</span>
                         <span className="truncate text-xs text-[var(--text-primary)]">{maskEmail(account.email, t("unknown"))}</span>
-                        <span className="truncate text-xs capitalize text-[var(--text-secondary)]">{account.provider}</span>
+                        <span className="truncate text-xs text-[var(--text-secondary)]">{getQuotaProviderLabel(account.provider)}</span>
                         <span
                           className={cn(
                             "text-xs",
@@ -340,7 +347,31 @@ export function QuotaDetails({
 
       {!error && filteredAccounts.length === 0 && !loading && (
         <div className="rounded-md border border-[var(--surface-border)] bg-[var(--surface-base)] p-6 text-center text-sm text-[var(--text-muted)]">
-          {t("noAccountsFound")}
+          {hasAnyAccounts ? t("noAccountsFound") : t("noAccountsAvailable")}
+        </div>
+      )}
+
+      {!error && !loading && totalPages > 1 && onPageChange && filteredAccounts.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[var(--surface-border)] bg-[var(--surface-base)] px-3 py-2">
+          <div className="text-xs text-[var(--text-muted)]">{t("pageOf", { page: currentPage, total: totalPages })}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="rounded-md border border-[var(--surface-border)] px-2.5 py-1 text-xs text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={currentPage <= 1}
+              onClick={() => onPageChange(currentPage - 1)}
+            >
+              {t("previous")}
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-[var(--surface-border)] px-2.5 py-1 text-xs text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={currentPage >= totalPages}
+              onClick={() => onPageChange(currentPage + 1)}
+            >
+              {t("next")}
+            </button>
+          </div>
         </div>
       )}
     </section>
