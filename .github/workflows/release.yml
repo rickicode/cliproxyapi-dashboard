@@ -1,7 +1,9 @@
 name: Release
 
 on:
-  # Manual trigger only — no automatic releases on push
+  push:
+    tags:
+      - "dashboard-v*"
   workflow_dispatch:
     inputs:
       action:
@@ -27,10 +29,10 @@ env:
 
 jobs:
   # Run Release Please to create/update a release PR, then merge and tag.
-  # Only runs when action is 'create-release'.
+  # Only runs for the manual create-release path.
   release-please:
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.action == 'create-release' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'create-release' }}
     outputs:
       release_created: ${{ steps.resolve.outputs.release_created }}
       tag_name: ${{ steps.resolve.outputs.tag_name }}
@@ -113,15 +115,25 @@ jobs:
     needs: [release-please]
     if: >-
       always() &&
-      (needs.release-please.outputs.release_created == 'true' ||
+      (startsWith(github.ref, 'refs/tags/dashboard-v') ||
+       needs.release-please.outputs.release_created == 'true' ||
        (github.event.inputs.action == 'build-existing-tag' && github.event.inputs.tag_name != ''))
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: >-
+            ${{
+              github.event_name == 'push' && github.ref ||
+              (github.event.inputs.action == 'build-existing-tag' && format('refs/tags/{0}', github.event.inputs.tag_name)) ||
+              format('refs/tags/{0}', needs.release-please.outputs.tag_name)
+            }}
 
       - name: Resolve version
         id: version
         run: |
-          if [ "${{ github.event.inputs.action }}" = "build-existing-tag" ]; then
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${{ github.ref_name }}"
+          elif [ "${{ github.event.inputs.action }}" = "build-existing-tag" ]; then
             TAG="${{ github.event.inputs.tag_name }}"
           else
             TAG="${{ needs.release-please.outputs.tag_name }}"
@@ -129,6 +141,14 @@ jobs:
           VERSION=$(echo "$TAG" | sed 's/^.*v//')
           echo "tag_name=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
+             [ "${{ github.event.inputs.action }}" = "create-release" ] && \
+             [ "${{ needs.release-please.outputs.release_created }}" = "true" ]; then
+            echo "publish_channel_tags=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish_channel_tags=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -172,10 +192,21 @@ jobs:
     needs: [release-please, build]
     if: ${{ always() && !cancelled() && needs.build.result == 'success' }}
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: >-
+            ${{
+              github.event_name == 'push' && github.ref ||
+              (github.event.inputs.action == 'build-existing-tag' && format('refs/tags/{0}', github.event.inputs.tag_name)) ||
+              format('refs/tags/{0}', needs.release-please.outputs.tag_name)
+            }}
+
       - name: Resolve version
         id: version
         run: |
-          if [ "${{ github.event.inputs.action }}" = "build-existing-tag" ]; then
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${{ github.ref_name }}"
+          elif [ "${{ github.event.inputs.action }}" = "build-existing-tag" ]; then
             TAG="${{ github.event.inputs.tag_name }}"
           else
             TAG="${{ needs.release-please.outputs.tag_name }}"
@@ -183,6 +214,15 @@ jobs:
           VERSION=$(echo "$TAG" | sed 's/^.*v//')
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${TAG}" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
+             [ "${{ github.event.inputs.action }}" = "create-release" ] && \
+             [ "${{ needs.release-please.outputs.release_created }}" = "true" ]; then
+            echo "publish_channel_tags=true" >> "$GITHUB_OUTPUT"
+            echo "tag_sha=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish_channel_tags=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Download digests
         uses: actions/download-artifact@v8
@@ -202,8 +242,11 @@ jobs:
         working-directory: /tmp/digests
         run: |
           TAGS="-t ${{ env.IMAGE }}:${{ steps.version.outputs.version }}"
-          TAGS="$TAGS -t ${{ env.IMAGE }}:latest"
-          TAGS="$TAGS -t ${{ env.IMAGE }}:sha-${GITHUB_SHA::7}"
+
+          if [ "${{ steps.version.outputs.publish_channel_tags }}" = "true" ]; then
+            TAGS="$TAGS -t ${{ env.IMAGE }}:latest"
+            TAGS="$TAGS -t ${{ env.IMAGE }}:sha-${{ steps.version.outputs.tag_sha }}"
+          fi
 
           SOURCES=""
           for digest in *; do
@@ -211,7 +254,13 @@ jobs:
           done
 
           echo "📦 Creating multi-arch manifest..."
-          echo "   Tags: ${{ steps.version.outputs.version }}, latest, sha-${GITHUB_SHA::7}"
+
+          if [ "${{ steps.version.outputs.publish_channel_tags }}" = "true" ]; then
+            echo "   Tags: ${{ steps.version.outputs.version }}, latest, sha-${{ steps.version.outputs.tag_sha }}"
+          else
+            echo "   Tags: ${{ steps.version.outputs.version }}"
+          fi
+
           echo "   Sources: $SOURCES"
 
           docker buildx imagetools create $TAGS $SOURCES
@@ -220,7 +269,11 @@ jobs:
   update-version-json:
     runs-on: ubuntu-latest
     needs: [release-please, merge]
-    if: ${{ needs.release-please.outputs.release_created == 'true' && needs.merge.result == 'success' }}
+    if: >-
+      needs.merge.result == 'success' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'create-release' &&
+      needs.release-please.outputs.release_created == 'true'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -229,9 +282,12 @@ jobs:
       - name: Update version.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
-          VERSION: ${{ needs.release-please.outputs.version }}
+          RELEASE_PLEASE_TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          RELEASE_PLEASE_VERSION: ${{ needs.release-please.outputs.version }}
         run: |
+          TAG_NAME="${RELEASE_PLEASE_TAG_NAME}"
+          VERSION="${RELEASE_PLEASE_VERSION}"
+
           RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
           RELEASE_NOTES=$(gh release view "${TAG_NAME}" --json body -q .body 2>/dev/null | head -c 2000 || echo "")
 
@@ -249,5 +305,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add version.json
           git diff --staged --quiet && echo "No changes to commit" && exit 0
-          git commit -m "chore: update version.json to ${{ needs.release-please.outputs.version }}"
+          VERSION="${{ needs.release-please.outputs.version }}"
+          git commit -m "chore: update version.json to ${VERSION}"
           git push

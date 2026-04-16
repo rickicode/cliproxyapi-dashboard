@@ -1,7 +1,14 @@
 #!/bin/bash
 #
 # CLIProxyAPI Stack Installation Script
-# Installs Docker, Docker Compose, configures UFW, generates secrets, and sets up systemd service
+# Installs Docker, Docker Compose, configures UFW, generates secrets, and sets up a boot-time
+# systemd wrapper for `docker compose up -d --wait`.
+#
+# Lifecycle intent:
+# - Compose files keep individual containers on `restart: unless-stopped` for daemon/host recovery.
+# - This installer adds a systemd unit so the intended compose project is brought up automatically on boot.
+# - If an operator stops a container/service intentionally, `unless-stopped` preserves that choice until the
+#   stack is started again via systemd or `docker compose up`.
 #
 # Usage: sudo ./install.sh
 #
@@ -600,12 +607,14 @@ else
 fi
 
 if [ $SKIP_SERVICE -eq 0 ]; then
-    log_info "Creating systemd service..."
+    log_info "Creating systemd service to restore the compose stack on boot..."
 
     # When using an external reverse proxy, exclude Caddy from startup by naming
-    # services explicitly. NOTE: when services are listed explicitly on the command
-    # line Docker Compose does NOT auto-start profiled services from COMPOSE_PROFILES,
-    # so perplexity-sidecar must also be listed here when it is enabled.
+    # services explicitly. This keeps boot-time reconciliation aligned with the
+    # chosen deployment shape instead of changing steady-state restart behavior.
+    # NOTE: when services are listed explicitly on the command line Docker Compose
+    # does NOT auto-start profiled services from COMPOSE_PROFILES, so
+    # perplexity-sidecar must also be listed here when it is enabled.
     if [ $EXTERNAL_PROXY -eq 1 ]; then
         COMPOSE_SERVICES="postgres cliproxyapi docker-proxy dashboard"
         if [ $PERPLEXITY_ENABLED -eq 1 ]; then
@@ -615,7 +624,8 @@ if [ $SKIP_SERVICE -eq 0 ]; then
         COMPOSE_DESC="(without Caddy - using external reverse proxy)"
     else
         # No explicit list — Compose starts everything; COMPOSE_PROFILES in .env
-        # activates the perplexity profile when present.
+        # activates the perplexity profile when present. This is the normal boot
+        # recovery path for the full installed stack.
         COMPOSE_START_CMD="/usr/bin/docker compose up -d --wait"
         COMPOSE_DESC="(full stack)"
     fi
@@ -637,7 +647,8 @@ ExecStop=/usr/bin/docker compose down
 TimeoutStartSec=300
 TimeoutStopSec=120
 
-# Restart policy
+# Restart policy for the systemd wrapper itself. Container restart behavior stays
+# defined in compose via `restart: unless-stopped`.
 Restart=on-failure
 RestartSec=10s
 
@@ -653,7 +664,7 @@ EOF
     systemctl daemon-reload
     systemctl enable cliproxyapi-stack.service
     
-    log_success "Systemd service installed and enabled"
+    log_success "Systemd service installed and enabled for automatic stack startup on boot"
 fi
 
 echo ""

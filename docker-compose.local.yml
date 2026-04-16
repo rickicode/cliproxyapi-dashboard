@@ -1,5 +1,10 @@
 # Local setup for macOS / Windows (Docker Desktop)
 # No Caddy, no TLS, no systemd — everything on localhost
+# Lifecycle intent:
+# - `docker compose up -d` establishes the local stack.
+# - `restart: unless-stopped` keeps containers available across Docker Desktop restarts unless you
+#   intentionally stop them.
+# - Unlike the production installer path, this file does not install a host-level boot service.
 # Usage: docker compose -f docker-compose.local.yml up -d
 
 services:
