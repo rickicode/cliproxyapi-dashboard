@@ -66,6 +66,14 @@ The installer will:
 8. Optionally set up automated daily or weekly backups
 9. Remove only the legacy installer-managed `/api/usage/collect` cron entry/comment because periodic usage collection is now handled internally by the dashboard app
 
+After installation, use the recommended update path that matches your maintenance window:
+
+- `./rebuild.sh --dashboard-only` rebuilds the `dashboard` image from your current local checkout and recreates only the `dashboard` container. It preserves `cliproxyapi` continuity.
+- `./rebuild.sh` is the recommended routine update path. It pulls newer images only for non-buildable services, rebuilds the `dashboard` image from your current local checkout, then runs `docker compose up -d --wait` without a full stack tear-down. Unchanged services stay up, but any service with a changed image can still be recreated individually.
+- `./rebuild.sh --full-recreate` is the disruptive option. It pulls newer images only for non-buildable services, rebuilds the `dashboard` image from your current local checkout, then runs `docker compose down` followed by `docker compose up -d --wait`, interrupting `cliproxyapi` and the rest of the stack.
+
+`rebuild.sh` only rebuilds the local `dashboard` source tree. It does not automatically rebuild other optional buildable services such as `perplexity-sidecar`; rebuild those manually if you maintain local changes there.
+
 ### Post-Installation
 
 After installation completes:
@@ -76,6 +84,8 @@ sudo systemctl status cliproxyapi-stack
 cd infrastructure
 docker compose logs -f
 ```
+
+For later updates, prefer `./rebuild.sh` for continuity-preserving maintenance and reserve `./rebuild.sh --full-recreate` for cases where you explicitly want a full stack restart. If you expect a newer dashboard release, update this repository first (for example with `git pull`) because `rebuild.sh` rebuilds the dashboard image from the local source tree; it does not fetch dashboard source from GHCR. The same script does not rebuild optional buildable services such as `perplexity-sidecar`.
 
 Access the dashboard at:
 - **Dashboard**: `https://dashboard.yourdomain.com`
@@ -317,3 +327,15 @@ Or manually:
 cd infrastructure
 docker compose up -d --wait
 ```
+
+For ongoing maintenance from the repository root, prefer the `rebuild.sh` flows above instead of ad-hoc compose update commands:
+
+```bash
+./rebuild.sh                  # In-place refresh, avoids full stack tear-down
+./rebuild.sh --dashboard-only # Rebuild dashboard only, leaves cliproxyapi untouched
+./rebuild.sh --full-recreate  # Full stop/remove/start cycle for the entire stack
+```
+
+Use `--full-recreate` only when you are prepared for a complete service interruption.
+
+If you intentionally need low-level/manual Compose operations, use them for troubleshooting or specialized cases rather than as the normal update path. In particular, `rebuild.sh` is the documented update workflow because it keeps the pull scope aligned with the repository's local-build behavior.

@@ -1,6 +1,11 @@
 # Local setup for macOS / Windows (Docker Desktop)
 # No Caddy, no TLS, no systemd — everything on localhost
-# Usage: docker compose -f docker-compose.local.yml up -d
+# Lifecycle intent:
+# - `docker compose up -d` establishes the local stack.
+# - `restart: unless-stopped` keeps containers available across Docker Desktop restarts unless you
+#   intentionally stop them.
+# - Unlike the production installer path, this file does not install a host-level boot service.
+# Usage: docker compose -f docker-compose.yml up -d
 
 services:
   postgres:
@@ -13,7 +18,7 @@ services:
       POSTGRES_DB: cliproxyapi
       POSTGRES_USER: cliproxyapi
       # NOTE: Only used on first run (volume creation). Changing this later won't update the DB password.
-      # To reset: docker compose -f docker-compose.local.yml down -v
+      # To reset: docker compose -f docker-compose.yml down -v
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data

@@ -1,4 +1,10 @@
 # CLIProxyAPI + Dashboard Docker Compose Stack
+# Lifecycle intent:
+# - Services use `restart: unless-stopped` so Docker brings them back after daemon/host restarts
+#   unless an operator explicitly stopped them.
+# - The installer also creates a systemd unit that runs `docker compose up -d --wait` at boot so the
+#   intended stack is reconciled after reboots.
+# - This file defines steady-state service behavior; install-time boot orchestration lives in install.sh.
 # Network Architecture:
 # - frontend: Public network (Caddy <-> Dashboard, Caddy <-> CLIProxyAPI)
 # - backend: Internal network (CLIProxyAPI <-> Postgres, Dashboard <-> Postgres)
@@ -116,7 +122,7 @@ services:
       start_period: 5s
 
   # Perplexity Pro Sidecar — OpenAI-compatible wrapper for Perplexity Pro subscription
-  # Only starts when COMPOSE_PROFILES includes "perplexity" (set by install.sh)
+  # Only starts when COMPOSE_PROFILES includes "perplexity" (set by install.sh/systemd startup path)
   perplexity-sidecar:
     profiles: ["perplexity"]
     build: ${INSTALL_DIR:-.}/../perplexity-sidecar
