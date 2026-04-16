@@ -6,6 +6,7 @@ vi.mock("server-only", () => ({}));
 const verifySessionMock = vi.fn();
 const findUniqueMock = vi.fn();
 const listOAuthAccountsMock = vi.fn();
+const contributeOAuthAccountMock = vi.fn();
 const apiSuccessMock = vi.fn((data: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify({ success: true, ...data }), { status })
 );
@@ -31,7 +32,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/providers/dual-write", () => ({
-  contributeOAuthAccount: vi.fn(),
+  contributeOAuthAccount: contributeOAuthAccountMock,
   listOAuthAccounts: listOAuthAccountsMock,
 }));
 
@@ -156,5 +157,152 @@ describe("GET /api/providers/oauth", () => {
       pageSize: 100,
       preview: true,
     });
+  });
+});
+
+describe("POST /api/providers/oauth", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    verifySessionMock.mockResolvedValue({ userId: "user-1" });
+  });
+
+  it("returns created success when contribute merges with an existing ownership", async () => {
+    const { validateOrigin } = await import("@/lib/auth/origin");
+    const { checkRateLimitWithPreset } = await import("@/lib/auth/rate-limit");
+
+    vi.mocked(validateOrigin).mockReturnValue(null);
+    vi.mocked(checkRateLimitWithPreset).mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
+    contributeOAuthAccountMock.mockResolvedValue({
+      ok: true,
+      id: "ownership-1",
+      resolution: "merged_with_existing",
+    });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new NextRequest("http://localhost/api/providers/oauth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "claude",
+          accountName: "claude_user@example.com.json",
+          accountEmail: "user@example.com",
+        }),
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body).toEqual({ id: "ownership-1", resolution: "merged_with_existing" });
+  });
+
+  it("returns conflict when contribute reports another user ownership", async () => {
+    const { validateOrigin } = await import("@/lib/auth/origin");
+    const { checkRateLimitWithPreset } = await import("@/lib/auth/rate-limit");
+
+    vi.mocked(validateOrigin).mockReturnValue(null);
+    vi.mocked(checkRateLimitWithPreset).mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
+    contributeOAuthAccountMock.mockResolvedValue({
+      ok: false,
+      error: "OAuth account already registered to another user",
+    });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new NextRequest("http://localhost/api/providers/oauth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "claude",
+          accountName: "claude_user@example.com.json",
+          accountEmail: "user@example.com",
+        }),
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe("OAuth account already registered to another user");
+  });
+
+  it("returns conflict when contribute reports manual review is required", async () => {
+    const { validateOrigin } = await import("@/lib/auth/origin");
+    const { checkRateLimitWithPreset } = await import("@/lib/auth/rate-limit");
+
+    vi.mocked(validateOrigin).mockReturnValue(null);
+    vi.mocked(checkRateLimitWithPreset).mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
+    contributeOAuthAccountMock.mockResolvedValue({
+      ok: false,
+      error: "OAuth account requires manual review before it can be registered",
+    });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new NextRequest("http://localhost/api/providers/oauth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "claude",
+          accountName: "claude_user@example.com.json",
+          accountEmail: "user@example.com",
+        }),
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe("OAuth account requires manual review before it can be registered");
+  });
+
+  it("returns validation error for malformed json request bodies", async () => {
+    const { validateOrigin } = await import("@/lib/auth/origin");
+    const { checkRateLimitWithPreset } = await import("@/lib/auth/rate-limit");
+
+    vi.mocked(validateOrigin).mockReturnValue(null);
+    vi.mocked(checkRateLimitWithPreset).mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new NextRequest("http://localhost/api/providers/oauth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: '{"provider":"claude",',
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Invalid JSON request body");
+    expect(contributeOAuthAccountMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects blank or whitespace-only account names", async () => {
+    const { validateOrigin } = await import("@/lib/auth/origin");
+    const { checkRateLimitWithPreset } = await import("@/lib/auth/rate-limit");
+
+    vi.mocked(validateOrigin).mockReturnValue(null);
+    vi.mocked(checkRateLimitWithPreset).mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
+
+    const { POST } = await import("./route");
+
+    for (const accountName of ["", "   ", "\n\t  "]) {
+      const response = await POST(
+        new NextRequest("http://localhost/api/providers/oauth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider: "claude",
+            accountName,
+            accountEmail: "user@example.com",
+          }),
+        })
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error).toBe("Invalid request body");
+    }
+
+    expect(contributeOAuthAccountMock).not.toHaveBeenCalled();
   });
 });

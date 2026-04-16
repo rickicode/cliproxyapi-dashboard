@@ -174,6 +174,10 @@ export type OAuthAutoClaimResult =
       candidate: OAuthAutoClaimCandidate;
     }
   | {
+      kind: "merged_with_existing";
+      candidate: OAuthAutoClaimCandidate;
+    }
+  | {
       kind: "already_owned_by_current_user";
       candidate: OAuthAutoClaimCandidate;
     }
@@ -214,6 +218,12 @@ export function getOAuthConnectSuccessFeedback(
       return {
         toastMessage: t("toastOAuthConnectedClaimed"),
         detailMessage: t("oauthSuccessClaimedMsg"),
+        strongClaimSuccess: true,
+      };
+    case "merged_with_existing":
+      return {
+        toastMessage: t("toastOAuthConnectedMerged"),
+        detailMessage: t("oauthSuccessMergedMsg"),
         strongClaimSuccess: true,
       };
     case "already_owned_by_current_user":
@@ -524,7 +534,7 @@ export function OAuthSection({
         const errorData: unknown = await res.json().catch(() => null);
         setOauthModalStatus(MODAL_STATUS.ERROR);
         setOauthErrorMessage(
-          extractApiError(errorData, `Failed to start OAuth flow (HTTP ${res.status}).`)
+          extractApiError(errorData, t("errorOAuthStartFailedStatus", { status: res.status }))
         );
         return;
       }
@@ -627,6 +637,7 @@ export function OAuthSection({
         body: JSON.stringify({
           provider: currentProvider,
           callbackUrl: callbackUrl.trim(),
+          state: currentState,
         }),
       });
 
@@ -882,7 +893,7 @@ export function OAuthSection({
         <ModalContent>
           {oauthModalStatus === MODAL_STATUS.LOADING && (
             <div className="rounded-xl border-l-4 border-[var(--surface-border)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--text-secondary)]">
-              Fetching authorization link...
+              {t("oauthFetchingAuthorizationLink")}
             </div>
           )}
 
@@ -893,7 +904,9 @@ export function OAuthSection({
                 : "border-[var(--surface-border)] bg-[var(--surface-muted)] text-[var(--text-secondary)]"
             }`}>
               <div className="font-medium text-[var(--text-primary)]">
-                {incognitoBrowserEnabled ? "Open This URL In A Private Window" : "Authorization URL"}
+                {incognitoBrowserEnabled
+                  ? t("oauthOpenPrivateWindowTitle")
+                  : t("oauthAuthorizationUrlTitle")}
               </div>
               <p className="mt-2 text-[var(--text-secondary)]">
                 {incognitoBrowserEnabled
@@ -946,32 +959,26 @@ export function OAuthSection({
             <div className="space-y-4">
               <div className="rounded-xl border-l-4 border-[var(--surface-border)] bg-[var(--surface-hover)] p-4 text-sm">
                 <div className="font-medium text-[var(--text-primary)]">
-                  Step-by-step
+                  {t("oauthStepByStepTitle")}
                 </div>
                 <ol className="mt-3 list-decimal space-y-2 pl-4 text-[var(--text-primary)]">
-                  <li>{incognitoBrowserEnabled ? "Open the authorization URL above in a private/incognito window and sign in there." : "Log in and authorize in the popup window."}</li>
-                  <li>
-                    After authorizing, the page will fail to load (this is
-                    expected).
-                  </li>
-                  <li>
-                    Our server runs remotely, so the OAuth redirect can&apos;t reach
-                    it directly. Copy the FULL URL from the address bar.
-                  </li>
+                  <li>{incognitoBrowserEnabled ? t("oauthStep1Incognito") : t("oauthStep1Popup")}</li>
+                  <li>{t("oauthStep2")}</li>
+                  <li>{t("oauthStep3")}</li>
                   <li>{t("oauthStep4")}</li>
                 </ol>
               </div>
 
               <div>
                 <div className="mb-2 text-xs font-medium text-[var(--text-primary)]">
-                  Paste callback URL
+                  {t("oauthPasteCallbackLabel")}
                 </div>
                 <Input
                   type="text"
                   name="callbackUrl"
                   value={callbackUrl}
                   onChange={handleCallbackChange}
-                  placeholder="https://localhost/callback?code=...&state=..."
+                  placeholder={t("oauthPasteCallbackPlaceholder")}
                   disabled={
                     oauthModalStatus === MODAL_STATUS.SUBMITTING ||
                     oauthModalStatus === MODAL_STATUS.POLLING
@@ -999,11 +1006,11 @@ export function OAuthSection({
             !selectedOAuthProviderRequiresCallback && (
             <div className="rounded-xl border-l-4 border-[var(--surface-border)] bg-[var(--surface-hover)] p-4 text-sm">
               <div className="font-medium text-[var(--text-primary)]">
-                Device Authorization
+                {t("oauthDeviceAuthTitle")}
               </div>
               <ol className="mt-3 list-decimal space-y-2 pl-4 text-[var(--text-primary)]">
-                <li>{incognitoBrowserEnabled ? "Open the authorization URL above in a private/incognito window." : "A browser window has opened with the authorization page."}</li>
-                <li>Log in and approve the access request.</li>
+                <li>{incognitoBrowserEnabled ? t("oauthDeviceStep1Incognito") : t("oauthDeviceStep1Popup")}</li>
+                <li>{t("oauthDeviceStep2")}</li>
                 <li>{t("oauthDeviceStep3")}</li>
               </ol>
               {deviceCodeInfo && (
@@ -1013,7 +1020,7 @@ export function OAuthSection({
                     <p className="mt-1 select-all font-mono text-lg font-bold tracking-wider text-[var(--text-primary)]">{deviceCodeInfo.userCode}</p>
                   </div>
                   <p className="text-xs text-[var(--text-muted)]">
-                    Enter this code at{" "}
+                    {t("oauthEnterCodeAt")}{" "}
                     <a href={deviceCodeInfo.verificationUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
                       {deviceCodeInfo.verificationUrl}
                     </a>

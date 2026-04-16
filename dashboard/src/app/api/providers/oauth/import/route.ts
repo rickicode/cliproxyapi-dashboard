@@ -12,6 +12,22 @@ function isValidOAuthProvider(provider: string): provider is OAuthProvider {
   return Object.values(OAUTH_PROVIDER).includes(provider as OAuthProvider);
 }
 
+function isConflictStyleImportError(error?: string | null): boolean {
+  if (!error) return false;
+
+  const normalized = error.toLowerCase();
+  return (
+    normalized.includes("already exists") ||
+    normalized.includes("already imported") ||
+    normalized.includes("manual review") ||
+    normalized.includes("ambiguous")
+  );
+}
+
+function getConflictStyleImportErrorMessage(error?: string | null): string | null {
+  return isConflictStyleImportError(error) && typeof error === "string" ? error : null;
+}
+
 export async function POST(request: NextRequest) {
   const session = await verifySession();
   if (!session) {
@@ -94,8 +110,9 @@ export async function POST(request: NextRequest) {
     );
 
     if (!result.ok) {
-      if (result.error?.includes("already exists") || result.error?.includes("already imported")) {
-        return apiError(ERROR_CODE.RESOURCE_ALREADY_EXISTS, result.error, 409);
+      const conflictError = getConflictStyleImportErrorMessage(result.error);
+      if (conflictError) {
+        return apiError(ERROR_CODE.RESOURCE_ALREADY_EXISTS, conflictError, 409);
       }
       return apiError(ERROR_CODE.PROVIDER_ERROR, result.error ?? "Import failed", 500);
     }
@@ -113,6 +130,7 @@ export async function POST(request: NextRequest) {
         data: {
           id: result.id,
           accountName: result.accountName,
+          resolution: result.resolution,
         },
       },
       { status: 201 }

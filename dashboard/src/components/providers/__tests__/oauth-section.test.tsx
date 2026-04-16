@@ -102,6 +102,28 @@ describe("getOAuthConnectSuccessFeedback", () => {
     expect(feedback.strongClaimSuccess).toBe(true);
   });
 
+  it("shows merged success feedback when the connected account is merged into an existing ownership", () => {
+    const autoClaim: OAuthAutoClaimResult = {
+      kind: "merged_with_existing",
+      candidate: {
+        accountName: "claude-user@example.com.json",
+        accountEmail: "user@example.com",
+        ownerUserId: "user-1",
+        ownerUsername: null,
+      },
+    };
+
+    const feedback = getOAuthConnectSuccessFeedback(autoClaim, t);
+
+    expect(feedback.toastMessage).toBe(
+      "OAuth account connected and merged into your existing claimed account"
+    );
+    expect(feedback.detailMessage).toBe(
+      "Connected successfully and merged into your existing claimed account."
+    );
+    expect(feedback.strongClaimSuccess).toBe(true);
+  });
+
   it("shows differentiated feedback when the matched account was already owned by the current user", () => {
     const autoClaim: OAuthAutoClaimResult = {
       kind: "already_owned_by_current_user",

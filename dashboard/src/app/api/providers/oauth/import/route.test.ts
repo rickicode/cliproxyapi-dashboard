@@ -187,4 +187,171 @@ describe("POST /api/providers/oauth/import", () => {
     expect(importBulkCodexOAuthCredentialsMock).not.toHaveBeenCalled();
     expect(body.error).toBe("validation");
   });
+
+  it("returns created success when import merges into an existing ownership", async () => {
+    importOAuthCredentialMock.mockResolvedValue({
+      ok: true,
+      id: "ownership-1",
+      accountName: "codex_user@example.com_v2.json",
+      resolution: "merged_with_existing",
+    });
+
+    const { POST } = await import("./route");
+    const request = new NextRequest("http://localhost/api/providers/oauth/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "codex",
+        fileName: "codex_user@example.com.json",
+        fileContent: JSON.stringify({
+          type: "codex",
+          email: "user@example.com",
+          access_token: "token",
+        }),
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.data).toEqual({
+      id: "ownership-1",
+      accountName: "codex_user@example.com_v2.json",
+      resolution: "merged_with_existing",
+    });
+  });
+
+  it("returns conflict when import needs manual review", async () => {
+    importOAuthCredentialMock.mockResolvedValue({
+      ok: false,
+      error: "Credential import requires manual review before ownership can be assigned",
+    });
+
+    const { POST } = await import("./route");
+    const request = new NextRequest("http://localhost/api/providers/oauth/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "codex",
+        fileName: "codex_user@example.com.json",
+        fileContent: JSON.stringify({
+          type: "codex",
+          email: "user@example.com",
+          access_token: "token",
+        }),
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe("Credential import requires manual review before ownership can be assigned");
+  });
+
+  it("returns conflict when import reports another user already claimed the credential", async () => {
+    importOAuthCredentialMock.mockResolvedValue({
+      ok: false,
+      error: "Credential already imported and claimed by another user",
+    });
+
+    const { POST } = await import("./route");
+    const request = new NextRequest("http://localhost/api/providers/oauth/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "codex",
+        fileName: "codex_user@example.com.json",
+        fileContent: JSON.stringify({
+          type: "codex",
+          email: "user@example.com",
+          access_token: "token",
+        }),
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe("Credential already imported and claimed by another user");
+  });
+
+  it("returns conflict when import reports ambiguous ownership", async () => {
+    importOAuthCredentialMock.mockResolvedValue({
+      ok: false,
+      error: "Credential import is ambiguous and requires manual review before ownership can be assigned",
+    });
+
+    const { POST } = await import("./route");
+    const request = new NextRequest("http://localhost/api/providers/oauth/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "codex",
+        fileName: "codex_user@example.com.json",
+        fileContent: JSON.stringify({
+          type: "codex",
+          email: "user@example.com",
+          access_token: "token",
+        }),
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe(
+      "Credential import is ambiguous and requires manual review before ownership can be assigned"
+    );
+  });
+
+  it("returns conflict when import reports post-upload manual review failure", async () => {
+    importOAuthCredentialMock.mockResolvedValue({
+      ok: false,
+      error: "Credential upload succeeded but ownership could not be verified; manual review required",
+    });
+
+    const { POST } = await import("./route");
+    const request = new NextRequest("http://localhost/api/providers/oauth/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "codex",
+        fileName: "codex_user@example.com.json",
+        fileContent: JSON.stringify({
+          type: "codex",
+          email: "user@example.com",
+          access_token: "token",
+        }),
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe(
+      "Credential upload succeeded but ownership could not be verified; manual review required"
+    );
+  });
+
+  it("returns validation 400 for malformed top-level request JSON", async () => {
+    const { POST } = await import("./route");
+    const request = new NextRequest("http://localhost/api/providers/oauth/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{bad json",
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(importOAuthCredentialMock).not.toHaveBeenCalled();
+    expect(importBulkCodexOAuthCredentialsMock).not.toHaveBeenCalled();
+    expect(body.error).toBe("Invalid JSON request body");
+  });
 });
