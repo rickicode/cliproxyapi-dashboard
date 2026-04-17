@@ -5,20 +5,19 @@ import { Errors } from "@/lib/errors";
 
 export async function GET() {
   try {
-    // DEV BYPASS: skip auth when SKIP_AUTH=1
-    if (process.env.SKIP_AUTH === "1") {
-      return NextResponse.json({
-        id: "dev-user-id",
-        username: "dev",
-        isAdmin: true,
-        createdAt: new Date().toISOString(),
-      });
-    }
-
     const session = await verifySession();
 
     if (!session) {
       return Errors.unauthorized();
+    }
+
+    if (session.isDevBypass) {
+      return NextResponse.json({
+        id: session.userId,
+        username: session.username,
+        isAdmin: true,
+        createdAt: new Date().toISOString(),
+      });
     }
 
     const user = await prisma.user.findUnique({

@@ -7,7 +7,11 @@ const { resolveOAuthOwnershipMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/db", () => ({
-  prisma: {},
+  prisma: {
+    providerOAuthOwnership: {
+      findMany: vi.fn(),
+    },
+  },
 }));
 
 vi.mock("@/lib/providers/oauth-ownership-resolver", () => ({
@@ -48,8 +52,10 @@ import {
   buildCodexBulkImportFileName,
   contributeOAuthAccount,
   importOAuthCredential,
+  listOAuthWithOwnership,
 } from "@/lib/providers/oauth-ops";
 import { fetchWithTimeout } from "@/lib/providers/management-api";
+import { prisma } from "@/lib/db";
 
 describe("buildCodexBulkImportFileName", () => {
   it("builds a codex-prefixed file name from email", () => {
@@ -512,5 +518,150 @@ describe("importOAuthCredential", () => {
         headers: { Authorization: "Bearer test-key" },
       }
     );
+  });
+});
+
+describe("listOAuthWithOwnership", () => {
+  beforeEach(() => {
+    vi.mocked(fetchWithTimeout).mockReset();
+    vi.mocked(prisma.providerOAuthOwnership.findMany).mockReset();
+    vi.mocked(prisma.providerOAuthOwnership.findMany).mockResolvedValue([]);
+  });
+
+  it("accepts auth_files payloads from the management API", async () => {
+    vi.mocked(fetchWithTimeout).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          auth_files: [
+            {
+              id: "file-1",
+              name: "claude_user@example.com.json",
+              provider: "claude",
+              email: "user@example.com",
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+
+    await expect(listOAuthWithOwnership("user-1", false)).resolves.toMatchObject({
+      ok: true,
+      accounts: [
+        expect.objectContaining({
+          id: "account-1",
+          accountName: "Account 1",
+          provider: "claude",
+        }),
+      ],
+    });
+  });
+
+  it("accepts bare-array payloads from the management API", async () => {
+    vi.mocked(fetchWithTimeout).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          {
+            id: "file-1",
+            name: "claude_user@example.com.json",
+            provider: "claude",
+            email: "user@example.com",
+          },
+        ]),
+        { status: 200 }
+      )
+    );
+
+    await expect(listOAuthWithOwnership("user-1", false)).resolves.toMatchObject({
+      ok: true,
+      accounts: [
+        expect.objectContaining({
+          id: "account-1",
+          accountName: "Account 1",
+          provider: "claude",
+        }),
+      ],
+    });
+  });
+
+  it("rejects malformed auth-file entries in listing responses conservatively", async () => {
+    vi.mocked(fetchWithTimeout).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          auth_files: [123],
+        }),
+        { status: 200 }
+      )
+    );
+
+    await expect(listOAuthWithOwnership("user-1", false)).resolves.toEqual({
+      ok: false,
+      error: "Invalid Management API response for OAuth accounts",
+    });
+
+    expect(prisma.providerOAuthOwnership.findMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects mixed valid and malformed auth-file entries in listing responses conservatively", async () => {
+    vi.mocked(fetchWithTimeout).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          auth_files: [
+            {
+              id: "file-1",
+              name: "claude_user@example.com.json",
+              provider: "claude",
+              email: "user@example.com",
+            },
+            {
+              id: "file-2",
+              name: "codex_user@example.com.json",
+              provider: { nested: "invalid" },
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+
+    await expect(listOAuthWithOwnership("user-1", false)).resolves.toEqual({
+      ok: false,
+      error: "Invalid Management API response for OAuth accounts",
+    });
+
+    expect(prisma.providerOAuthOwnership.findMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects conflicting dual-wrapper auth-file responses conservatively", async () => {
+    vi.mocked(fetchWithTimeout).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          files: [
+            {
+              id: "file-1",
+              name: "claude_user@example.com.json",
+              provider: "claude",
+              email: "user@example.com",
+            },
+          ],
+          auth_files: [
+            {
+              id: "file-2",
+              name: "codex_user@example.com.json",
+              provider: "codex",
+              email: "user@example.com",
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+
+    await expect(listOAuthWithOwnership("user-1", false)).resolves.toEqual({
+      ok: false,
+      error: "Invalid Management API response for OAuth accounts",
+    });
+
+    expect(prisma.providerOAuthOwnership.findMany).not.toHaveBeenCalled();
   });
 });

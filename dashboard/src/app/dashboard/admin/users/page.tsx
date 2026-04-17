@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/toast";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { extractApiError } from "@/lib/utils";
 import { API_ENDPOINTS } from "@/lib/api-endpoints";
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 
 interface User {
   id: string;
@@ -36,6 +36,7 @@ export default function AdminUsersPage() {
   const { showToast } = useToast();
   const router = useRouter();
 
+  const locale = useLocale();
   const t = useTranslations('users');
   const tc = useTranslations('common');
 
@@ -141,11 +142,11 @@ export default function AdminUsersPage() {
 
   const formatDate = (dateString: string) => {
     try {
-      return new Date(dateString).toLocaleDateString("en-US", {
+      return new Intl.DateTimeFormat(locale, {
         year: "numeric",
         month: "short",
         day: "numeric",
-      });
+      }).format(new Date(dateString));
     } catch {
       return dateString;
     }

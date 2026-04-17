@@ -2,6 +2,7 @@ import "server-only";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { invalidateProxyModelsCache } from "@/lib/cache";
+import { providerMutex } from "@/lib/providers/management-api";
 
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -53,8 +54,9 @@ function isManagementProviderEntry(value: unknown): value is ManagementProviderE
 export async function syncCustomProviderToProxy(
   providerData: SyncProviderData,
   operation: "create" | "update",
-  prefetchedConfig?: ManagementProviderEntry[]
+  _prefetchedConfig?: ManagementProviderEntry[]
 ): Promise<SyncResult> {
+  void _prefetchedConfig;
   const managementUrl = env.CLIPROXYAPI_MANAGEMENT_URL;
   const secretKey = env.MANAGEMENT_API_KEY;
 
@@ -66,11 +68,8 @@ export async function syncCustomProviderToProxy(
   }
 
   try {
-    let currentList: ManagementProviderEntry[];
-
-    if (prefetchedConfig) {
-      currentList = prefetchedConfig;
-    } else {
+    const release = await providerMutex.acquire("openai-compatibility");
+    try {
       const getRes = await fetchWithTimeout(`${managementUrl}/openai-compatibility`, {
         headers: { "Authorization": `Bearer ${secretKey}` }
       });
@@ -86,66 +85,68 @@ export async function syncCustomProviderToProxy(
 
       const configData = await getRes.json() as Record<string, unknown>;
       const openAiCompatibility = configData["openai-compatibility"];
-      currentList = Array.isArray(openAiCompatibility)
+      const currentList = Array.isArray(openAiCompatibility)
         ? openAiCompatibility.filter(isManagementProviderEntry)
         : [];
-    }
 
-    const newEntry = {
-      name: providerData.providerId,
-      prefix: providerData.prefix,
-      "base-url": providerData.baseUrl,
-      "api-key-entries": [{ 
-        "api-key": providerData.apiKey,
-        ...(providerData.proxyUrl ? { "proxy-url": providerData.proxyUrl } : {})
-      }],
-      models: providerData.models.map(m => ({ name: m.upstreamName, alias: m.alias })),
-      "excluded-models": providerData.excludedModels.map(e => e.pattern),
-      ...(providerData.headers ? { headers: providerData.headers } : {})
-    };
-
-    let newList: unknown[];
-    if (operation === "create") {
-      newList = [...currentList, newEntry];
-    } else {
-      // Update: replace existing entry, or append if not found (e.g. after proxy restart)
-      const existingIndex = currentList.findIndex(
-        (entry) => entry.name === providerData.providerId
-      );
-      if (existingIndex >= 0) {
-        newList = currentList.map((entry) =>
-          entry.name === providerData.providerId ? newEntry : entry
-        );
-      } else {
-        newList = [...currentList, newEntry];
-      }
-    }
-
-    logger.info({ operation, providerId: providerData.providerId, entryCount: newList.length }, "Syncing provider to CLIProxyAPI");
-
-    const putRes = await fetchWithTimeout(`${managementUrl}/openai-compatibility`, {
-      method: "PUT",
-      headers: { 
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${secretKey}` 
-      },
-      body: JSON.stringify(newList)
-    });
-
-    if (!putRes.ok) {
-      const errorBody = await putRes.text().catch(() => "unreadable");
-      logger.error({ status: putRes.status, errorBody }, `Failed to sync custom provider to Management API (${operation})`);
-      return {
-        syncStatus: "failed",
-        syncMessage: `Backend sync failed - provider ${operation === "create" ? "created" : "updated"} but may not work immediately`
+      const newEntry = {
+        name: providerData.providerId,
+        prefix: providerData.prefix,
+        "base-url": providerData.baseUrl,
+        "api-key-entries": [{
+          "api-key": providerData.apiKey,
+          ...(providerData.proxyUrl ? { "proxy-url": providerData.proxyUrl } : {})
+        }],
+        models: providerData.models.map(m => ({ name: m.upstreamName, alias: m.alias })),
+        "excluded-models": providerData.excludedModels.map(e => e.pattern),
+        ...(providerData.headers ? { headers: providerData.headers } : {})
       };
+
+      let newList: unknown[];
+      if (operation === "create") {
+        newList = [...currentList, newEntry];
+      } else {
+        // Update: replace existing entry, or append if not found (e.g. after proxy restart)
+        const existingIndex = currentList.findIndex(
+          (entry) => entry.name === providerData.providerId
+        );
+        if (existingIndex >= 0) {
+          newList = currentList.map((entry) =>
+            entry.name === providerData.providerId ? newEntry : entry
+          );
+        } else {
+          newList = [...currentList, newEntry];
+        }
+      }
+
+      logger.info({ operation, providerId: providerData.providerId, entryCount: newList.length }, "Syncing provider to CLIProxyAPI");
+
+      const putRes = await fetchWithTimeout(`${managementUrl}/openai-compatibility`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${secretKey}`
+        },
+        body: JSON.stringify(newList)
+      });
+
+      if (!putRes.ok) {
+        const errorBody = await putRes.text().catch(() => "unreadable");
+        logger.error({ status: putRes.status, errorBody }, `Failed to sync custom provider to Management API (${operation})`);
+        return {
+          syncStatus: "failed",
+          syncMessage: `Backend sync failed - provider ${operation === "create" ? "created" : "updated"} but may not work immediately`
+        };
+      }
+
+      invalidateProxyModelsCache();
+
+      return {
+        syncStatus: "ok"
+      };
+    } finally {
+      release();
     }
-
-    invalidateProxyModelsCache();
-
-    return {
-      syncStatus: "ok"
-    };
 
   } catch (syncError) {
     logger.error({ err: syncError }, `Failed to sync custom provider to Management API (${operation})`);

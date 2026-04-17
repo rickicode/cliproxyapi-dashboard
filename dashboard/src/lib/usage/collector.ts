@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { syncKeysToCliProxyApi } from "@/lib/api-keys/sync";
+import { parseAuthFilesResponse } from "@/lib/providers/auth-files";
 
 const BATCH_SIZE = 500;
 const LATENCY_BACKFILL_BATCH_SIZE = 100;
@@ -103,6 +104,33 @@ interface AuthFileEntry {
   file_name?: string;
   email?: string;
   provider?: string;
+  [key: string]: unknown;
+}
+
+function isCollectorAuthFileEntry(value: unknown): value is AuthFileEntry {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const entry = value as Record<string, unknown>;
+
+  if (typeof entry.auth_index !== "string" || !entry.auth_index.trim()) {
+    return false;
+  }
+
+  if ("file_name" in entry && entry.file_name !== undefined && typeof entry.file_name !== "string") {
+    return false;
+  }
+
+  if ("email" in entry && entry.email !== undefined && typeof entry.email !== "string") {
+    return false;
+  }
+
+  if ("provider" in entry && entry.provider !== undefined && typeof entry.provider !== "string") {
+    return false;
+  }
+
+  return true;
 }
 
 function normalizeSource(value: unknown): string {
@@ -328,14 +356,12 @@ export async function runUsageCollector(input: {
     if (authFilesResponse?.ok) {
       try {
         const authFilesJson: unknown = await authFilesResponse.json();
-        const entries: AuthFileEntry[] = Array.isArray(authFilesJson)
-          ? authFilesJson
-          : Array.isArray((authFilesJson as Record<string, unknown>)?.auth_files)
-            ? ((authFilesJson as Record<string, unknown>).auth_files as AuthFileEntry[])
-            : [];
+        const entries = parseAuthFilesResponse<AuthFileEntry>(authFilesJson);
 
-        for (const entry of entries) {
-          if (entry.auth_index) {
+        if (!entries || !entries.every(isCollectorAuthFileEntry)) {
+          logger.warn({ runId }, "Ignoring auth-files response due to malformed entry");
+        } else {
+          for (const entry of entries) {
             authIndexToFile.set(entry.auth_index, {
               fileName: entry.file_name ?? "",
               email: entry.email ?? "",

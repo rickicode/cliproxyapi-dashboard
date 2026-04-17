@@ -228,14 +228,14 @@ export function DashboardNav() {
         <div className="flex items-center gap-3 px-4 py-4">
           <Image
             src="/icon.png"
-            alt="CLIProxy Logo"
+            alt={t("logoAlt")}
             width={32}
             height={32}
             className="shrink-0 rounded-md"
           />
           <div className={cn("min-w-0 transition-opacity duration-200", isCollapsed && "lg:opacity-0")}>
             <h1 className="truncate text-base font-semibold tracking-tight text-[var(--text-primary)]">
-              CLIProxy
+              {t("appName")}
             </h1>
             <p className="truncate text-xs text-[var(--text-muted)]">{t('appSubtitle')}</p>
           </div>
@@ -295,7 +295,7 @@ export function DashboardNav() {
             type="button"
             onClick={toggleCollapsed}
             className="flex w-full items-center rounded-md px-3 py-2 text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
-            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={isCollapsed ? t("expandSidebar") : t("collapseSidebar")}
             aria-expanded={!isCollapsed}
           >
             <CollapseIcon collapsed={isCollapsed} />

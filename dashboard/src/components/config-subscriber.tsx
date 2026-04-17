@@ -7,7 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { API_ENDPOINTS } from "@/lib/api-endpoints";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 interface SubscriptionStatus {
   templateName: string;
@@ -29,6 +29,7 @@ export function ConfigSubscriber({ hasApiKey }: ConfigSubscriberProps) {
   const [actionLoading, setActionLoading] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const { showToast } = useToast();
+  const locale = useLocale();
   const t = useTranslations('configSharing');
 
   const fetchStatus = useCallback(async () => {
@@ -182,10 +183,7 @@ export function ConfigSubscriber({ hasApiKey }: ConfigSubscriberProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <p className="text-sm text-[var(--text-secondary)]">
-              Subscribe to someone else&apos;s CLIProxyAPI configuration. Your model selection will be
-              automatically controlled by the publisher until you unsubscribe.
-            </p>
+            <p className="text-sm text-[var(--text-secondary)]">{t('subscribeDescription')}</p>
 
             {!hasApiKey && (
               <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
@@ -199,7 +197,7 @@ export function ConfigSubscriber({ hasApiKey }: ConfigSubscriberProps) {
             <div className="space-y-3">
               <div>
                 <label htmlFor="share-code-input" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                  Share Code
+                  {t('shareCodeInputLabel')}
                 </label>
                 <Input
                   name="share-code-input"
@@ -248,20 +246,31 @@ export function ConfigSubscriber({ hasApiKey }: ConfigSubscriberProps) {
               <div className="text-xs font-semibold text-[var(--text-primary)]">{status.templateName}</div>
             </div>
             <div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{t('statusLabel')}</div>
-              <div className={status.isActive ? "text-xs font-semibold text-emerald-700" : "text-xs font-semibold text-amber-700"}>{status.isActive ? "Active" : "Paused"}</div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{t('subscriptionStatusLabel')}</div>
+              <div className={status.isActive ? "text-xs font-semibold text-emerald-700" : "text-xs font-semibold text-amber-700"}>{status.isActive ? t('subscriptionActive') : t('subscriptionPaused')}</div>
             </div>
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{t('lastSyncedLabel')}</div>
-              <div className="text-xs font-semibold text-[var(--text-primary)]">{status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleString() : "Never"}</div>
+              <div className="text-xs font-semibold text-[var(--text-primary)]">
+                {status.lastSyncedAt
+                  ? new Intl.DateTimeFormat(locale, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }).format(new Date(status.lastSyncedAt))
+                  : t('neverSynced')}
+              </div>
             </div>
           </div>
 
           <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--surface-muted)] border border-[var(--surface-border)]">
             <span className="text-lg">🔒</span>
             <p className="text-sm text-[var(--text-secondary)]">
-              While subscribed, model selection is controlled by <strong>{status.publisherUsername}</strong>. 
-              Your previous preferences will be restored when you unsubscribe.
+              {t.rich('subscribedControlledMessage', {
+                publisher: () => <strong>{status.publisherUsername}</strong>,
+              })}
             </p>
           </div>
 

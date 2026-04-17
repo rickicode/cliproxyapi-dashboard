@@ -40,8 +40,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { username, password } = body;
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return Errors.validation("Invalid JSON body");
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return Errors.validation("Invalid request body");
+    }
+
+    const { username, password } = body as {
+      username?: unknown;
+      password?: unknown;
+    };
 
     if (!username || !password) {
       return Errors.missingFields(["username", "password"]);

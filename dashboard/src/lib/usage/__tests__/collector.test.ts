@@ -120,6 +120,21 @@ function buildAuthFilesResponse() {
   );
 }
 
+function buildAuthFilesFilesResponse() {
+  return new Response(
+    JSON.stringify({
+      files: [
+        {
+          auth_index: "auth-1",
+          file_name: "tester@example.com",
+          email: "tester@example.com",
+        },
+      ],
+    }),
+    { status: 200 }
+  );
+}
+
 describe("runUsageCollector", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -327,6 +342,193 @@ describe("runUsageCollector", () => {
           errorMessage: null,
         }),
       })
+    );
+  });
+
+  it("accepts auth-files responses wrapped in files arrays", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(buildUsageResponse()).mockResolvedValueOnce(buildAuthFilesFilesResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { runUsageCollector } = await import("@/lib/usage/collector");
+
+    await expect(runUsageCollector({ trigger: "scheduler" })).resolves.toMatchObject({
+      ok: true,
+      skipped: false,
+      processed: 1,
+      stored: 1,
+    });
+
+    expect(mockPrisma.usageRecord.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            authIndex: "auth-1",
+            userId: "user-1",
+            source: "tester@example.com",
+          }),
+        ],
+      })
+    );
+  });
+
+  it("accepts bare-array auth-files responses", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(buildUsageResponse())
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              auth_index: "auth-1",
+              file_name: "tester@example.com",
+              email: "tester@example.com",
+            },
+          ]),
+          { status: 200 }
+        )
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { runUsageCollector } = await import("@/lib/usage/collector");
+
+    await expect(runUsageCollector({ trigger: "scheduler" })).resolves.toMatchObject({
+      ok: true,
+      skipped: false,
+      processed: 1,
+      stored: 1,
+    });
+
+    expect(mockPrisma.usageRecord.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            authIndex: "auth-1",
+            userId: "user-1",
+            source: "tester@example.com",
+          }),
+        ],
+      })
+    );
+  });
+
+  it("ignores the entire auth-files mapping when any entry is malformed", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(buildUsageResponse())
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            auth_files: [
+              {
+                auth_index: "auth-1",
+                file_name: "attacker@example.com",
+                email: "attacker@example.com",
+              },
+              {
+                auth_index: 123,
+                file_name: "broken@example.com",
+                email: "broken@example.com",
+              },
+            ],
+          }),
+          { status: 200 }
+        )
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    mockPrisma.providerOAuthOwnership.findMany.mockResolvedValue([
+      {
+        accountName: "tester@example.com",
+        accountEmail: "tester@example.com",
+        userId: "user-1",
+      },
+      {
+        accountName: "attacker@example.com",
+        accountEmail: "attacker@example.com",
+        userId: "user-2",
+      },
+    ]);
+    mockPrisma.user.findMany.mockResolvedValue([
+      { id: "user-1", username: "tester@example.com" },
+      { id: "user-2", username: "attacker@example.com" },
+    ]);
+
+    const { runUsageCollector } = await import("@/lib/usage/collector");
+
+    await expect(runUsageCollector({ trigger: "scheduler" })).resolves.toMatchObject({
+      ok: true,
+      skipped: false,
+      processed: 1,
+      stored: 1,
+    });
+
+    expect(mockPrisma.usageRecord.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            authIndex: "auth-1",
+            userId: "user-1",
+            source: "tester@example.com",
+          }),
+        ],
+      })
+    );
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: expect.any(String) }),
+      "Ignoring auth-files response due to malformed entry"
+    );
+  });
+
+  it("ignores dual-wrapper auth-files responses when the wrappers conflict", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(buildUsageResponse({ source: "opaque-source", auth_index: "opaque-auth" }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            files: [
+              {
+                auth_index: "auth-1",
+                file_name: "tester@example.com",
+                email: "tester@example.com",
+              },
+            ],
+            auth_files: [
+              {
+                auth_index: "auth-2",
+                file_name: "other@example.com",
+                email: "other@example.com",
+              },
+            ],
+          }),
+          { status: 200 }
+        )
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { runUsageCollector } = await import("@/lib/usage/collector");
+
+    await expect(runUsageCollector({ trigger: "scheduler" })).resolves.toMatchObject({
+      ok: true,
+      skipped: false,
+      processed: 1,
+      stored: 1,
+    });
+
+    expect(mockPrisma.usageRecord.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            authIndex: "opaque-auth",
+            userId: null,
+            source: "opaque-source",
+          }),
+        ],
+      })
+    );
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: expect.any(String) }),
+      "Ignoring auth-files response due to malformed entry"
     );
   });
 
