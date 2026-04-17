@@ -134,6 +134,19 @@ export interface ToggleOAuthResult {
   error?: string;
 }
 
+export interface SyncOAuthAccountStatusInput {
+  accountName: string;
+  provider: string;
+  status: string;
+  statusMessage: string | null;
+  unavailable: boolean;
+}
+
+export interface SyncOAuthAccountStatusResult {
+  ok: boolean;
+  error?: string;
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -156,4 +169,52 @@ export function isOpenAICompatArray(
         (entry) => isRecord(entry) && typeof entry["api-key"] === "string"
       )
   );
+}
+
+export async function syncOAuthAccountStatus(
+  input: SyncOAuthAccountStatusInput
+): Promise<SyncOAuthAccountStatusResult> {
+  try {
+    const response = await fetchWithTimeout(`${MANAGEMENT_BASE_URL}/auth-files/status`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": MANAGEMENT_API_KEY,
+      },
+      body: JSON.stringify({
+        name: input.accountName,
+        provider: input.provider,
+        status: input.status,
+        status_message: input.statusMessage,
+        unavailable: input.unavailable,
+      }),
+    });
+
+    if (!response.ok) {
+      let responseText = "";
+
+      try {
+        responseText = await response.text();
+      } catch {
+        responseText = "";
+      } finally {
+        await response.body?.cancel().catch(() => undefined);
+      }
+
+      const message = responseText
+        ? `Management API auth-file status sync failed with HTTP ${response.status}: ${responseText}`
+        : `Management API auth-file status sync failed with HTTP ${response.status}`;
+
+      return { ok: false, error: message };
+    }
+
+    await response.body?.cancel().catch(() => undefined);
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      error: `Management API auth-file status sync failed: ${message}`,
+    };
+  }
 }

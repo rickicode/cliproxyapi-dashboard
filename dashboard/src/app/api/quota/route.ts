@@ -19,6 +19,10 @@ import {
   type QuotaGroup,
   type QuotaResponse,
 } from "@/lib/model-first-monitoring";
+import {
+  syncOAuthAccountStatus,
+  type SyncOAuthAccountStatusInput,
+} from "@/lib/providers/management-api";
 import { inferOAuthProviderFromIdentifiers } from "@/lib/providers/provider-inference";
 import { isShortTermQuotaWindow } from "@/lib/quota-window-classification";
 
@@ -29,7 +33,11 @@ const MANAGEMENT_API_KEY = process.env.MANAGEMENT_API_KEY;
 const QUOTA_HIGH_VOLUME_THRESHOLD = 25;
 const QUOTA_HIGH_VOLUME_CONCURRENCY = 8;
 const CODEX_ACCOUNT_SLOW_LOG_THRESHOLD_MS = 1_000;
+const CODEX_STATUS_SYNC_DEDUPE_WINDOW_MS = 30_000;
 type QuotaView = "summary" | "detail";
+
+const recentCodexStatusSyncs = new Map<string, number>();
+const inFlightCodexStatusSyncs = new Map<string, Promise<void>>();
 
 interface QuotaSummaryResponse {
   providers: Array<{
@@ -294,6 +302,121 @@ function logSlowCodexQuotaCheck(params: {
     },
     hasError ? "Codex quota check failed" : "Codex quota check was slow"
   );
+}
+
+type CodexQuotaSyncTarget = Pick<
+  SyncOAuthAccountStatusInput,
+  "status" | "statusMessage" | "unavailable"
+>;
+
+type CodexQuotaResult =
+  | {
+      kind: "success";
+      groups: QuotaGroup[];
+      syncTarget: CodexQuotaSyncTarget;
+    }
+  | {
+      kind: "syncable-error";
+      error: string;
+      syncTarget: CodexQuotaSyncTarget;
+    }
+  | {
+      kind: "error";
+      error: string;
+    };
+
+function pruneExpiredCodexStatusSyncs(now: number): void {
+  for (const [key, syncedAt] of recentCodexStatusSyncs.entries()) {
+    if (now - syncedAt >= CODEX_STATUS_SYNC_DEDUPE_WINDOW_MS) {
+      recentCodexStatusSyncs.delete(key);
+    }
+  }
+}
+
+function getCodexStatusSyncKey(accountName: string, target: CodexQuotaSyncTarget): string {
+  return JSON.stringify([accountName, target.status, target.statusMessage, target.unavailable]);
+}
+
+function shouldSyncCodexQuotaStatus(dedupeKey: string): boolean {
+  const now = Date.now();
+  pruneExpiredCodexStatusSyncs(now);
+  const lastSyncedAt = recentCodexStatusSyncs.get(dedupeKey);
+
+  if (typeof lastSyncedAt === "number" && now - lastSyncedAt < CODEX_STATUS_SYNC_DEDUPE_WINDOW_MS) {
+    return false;
+  }
+
+  return true;
+}
+
+async function syncCodexQuotaStatusIfNeeded(params: {
+  account: AuthFile;
+  provider: string;
+  result: CodexQuotaResult;
+}): Promise<void> {
+  const { account, provider, result } = params;
+  const accountName = account.name?.trim();
+
+  if (!accountName) {
+    return;
+  }
+
+  if (result.kind === "error") {
+    return;
+  }
+
+  const dedupeKey = getCodexStatusSyncKey(accountName, result.syncTarget);
+  if (!shouldSyncCodexQuotaStatus(dedupeKey)) {
+    return;
+  }
+
+  const inFlightSync = inFlightCodexStatusSyncs.get(dedupeKey);
+  if (inFlightSync) {
+    await inFlightSync;
+    return;
+  }
+
+  const syncPromise = (async () => {
+    try {
+      const syncResult = await syncOAuthAccountStatus({
+        accountName,
+        provider,
+        status: result.syncTarget.status,
+        statusMessage: result.syncTarget.statusMessage,
+        unavailable: result.syncTarget.unavailable,
+      });
+
+      if (syncResult.ok) {
+        recentCodexStatusSyncs.set(dedupeKey, Date.now());
+        return;
+      }
+
+      logger.warn(
+        {
+          provider,
+          auth_index: String(account.auth_index),
+          accountName,
+          error: syncResult.error,
+        },
+        "Failed to sync Codex OAuth account status from quota outcome"
+      );
+    } catch (error) {
+      logger.warn(
+        {
+          provider,
+          auth_index: String(account.auth_index),
+          accountName,
+          error,
+        },
+        "Failed to sync Codex OAuth account status from quota outcome"
+      );
+    } finally {
+      inFlightCodexStatusSyncs.delete(dedupeKey);
+    }
+  })();
+
+  inFlightCodexStatusSyncs.set(dedupeKey, syncPromise);
+  await syncPromise;
 }
 
 interface AuthFile {
@@ -702,7 +825,7 @@ function parseCodexQuota(data: CodexWhamUsageResponse): QuotaGroup[] {
 
 async function fetchCodexQuota(
   authIndex: string
-): Promise<QuotaGroup[] | { error: string }> {
+): Promise<CodexQuotaResult> {
   try {
     const response = await fetch(`${CLIPROXYAPI_MANAGEMENT_URL}/api-call`, {
       method: "POST",
@@ -725,9 +848,15 @@ async function fetchCodexQuota(
     if (!response.ok) {
       await response.body?.cancel();
       if (response.status === 502) {
-        return { error: "Cannot reach chatgpt.com - check network connectivity (502 Bad Gateway)" };
+        return {
+          kind: "error",
+          error: "Cannot reach chatgpt.com - check network connectivity (502 Bad Gateway)",
+        };
       }
-      return { error: `Management API call failed: ${response.status}` };
+      return {
+        kind: "error",
+        error: `Management API call failed: ${response.status}`,
+      };
     }
 
     const apiCallResult = (await response.json()) as ApiCallResponse | CodexWhamUsageResponse;
@@ -751,22 +880,47 @@ async function fetchCodexQuota(
           } catch { /* ignore parse errors */ }
         }
         if (statusCode === 401) {
-          return { error: "Codex OAuth token expired - re-authenticate in CLIProxyAPI" };
+          return {
+            kind: "syncable-error",
+            error: "Codex OAuth token expired - re-authenticate in CLIProxyAPI",
+            syncTarget: {
+              status: "error",
+              statusMessage: "Codex OAuth token expired - re-authenticate in CLIProxyAPI",
+              unavailable: true,
+            },
+          };
         }
         if (statusCode === 403) {
-          return { error: `Codex access denied${errorDetail ? `: ${errorDetail}` : " - account may need verification"}` };
+          return {
+            kind: "syncable-error",
+            error: "Codex access denied - account may need verification",
+            syncTarget: {
+              status: "error",
+              statusMessage: "Codex access denied - account may need verification",
+              unavailable: true,
+            },
+          };
         }
         if (statusCode === 429) {
-          return { error: "Codex rate limited - quota exceeded" };
+          return {
+            kind: "error",
+            error: "Codex rate limited - quota exceeded",
+          };
         }
-        return { error: `Codex API error: ${statusCode}${errorDetail ? ` - ${errorDetail}` : ""}` };
+        return {
+          kind: "error",
+          error: `Codex API error: ${statusCode}${errorDetail ? ` - ${errorDetail}` : ""}`,
+        };
       }
 
       if (typeof typedResult.body === "string") {
         try {
           parsedBody = JSON.parse(typedResult.body);
         } catch {
-          return { error: "Invalid provider response body" };
+          return {
+            kind: "error",
+            error: "Invalid provider response body",
+          };
         }
       } else {
         parsedBody = typedResult.body;
@@ -779,12 +933,24 @@ async function fetchCodexQuota(
     const groups = parseCodexQuota(data);
 
     if (groups.length === 0) {
-      return { error: "No Codex quota windows found" };
+      return {
+        kind: "error",
+        error: "No Codex quota windows found",
+      };
     }
 
-    return groups;
+    return {
+      kind: "success",
+      groups,
+      syncTarget: {
+        status: "active",
+        statusMessage: null,
+        unavailable: false,
+      },
+    };
   } catch (error) {
     return {
+      kind: "error",
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -1604,7 +1770,13 @@ async function aggregateQuotaData(params?: {
       if (providerNorm === "codex") {
         const result = await fetchCodexQuota(authIndex);
 
-        if ("error" in result) {
+        await syncCodexQuotaStatusIfNeeded({
+          account,
+          provider: providerForResponse,
+          result,
+        });
+
+        if (result.kind !== "success") {
           return finalizeAccount({
             auth_index: authIndex,
             provider: providerForResponse,
@@ -1619,7 +1791,7 @@ async function aggregateQuotaData(params?: {
           provider: providerForResponse,
           email: displayEmail,
           supported: true,
-          groups: result,
+          groups: result.groups,
         });
       }
 

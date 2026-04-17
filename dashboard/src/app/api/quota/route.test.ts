@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 type QuotaTestModel = {
   id: string;
@@ -45,6 +45,10 @@ vi.mock("@/lib/db", () => ({
   prisma: {},
 }));
 
+vi.mock("@/lib/providers/management-api", () => ({
+  syncOAuthAccountStatus: vi.fn(async () => ({ ok: true })),
+}));
+
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
@@ -55,6 +59,11 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+  });
+
+  afterEach(() => {
+    fetchMock.mockReset();
+    vi.restoreAllMocks();
   });
 
   it("returns supported: true for gemini-cli accounts", async () => {
@@ -418,6 +427,11 @@ describe("GET /api/quota - imported provider normalization", () => {
     vi.resetModules();
   });
 
+  afterEach(() => {
+    fetchMock.mockReset();
+    vi.restoreAllMocks();
+  });
+
   it("copilot provider returns supported: true", async () => {
     const authFilesResponse = {
       files: [
@@ -756,74 +770,43 @@ describe("GET /api/quota - imported provider normalization", () => {
   });
 
   it("keeps concurrent summary and detail requests isolated by view", async () => {
-    const authFilesResponse = {
-      files: [
-        {
-          auth_index: 0,
-          provider: "codex",
-          email: "mixed@example.com",
-          disabled: false,
-          status: "active",
-        },
-      ],
-    };
+    const routeModule = await import("./route");
+    type DetailResponse = Awaited<
+      ReturnType<typeof routeModule.quotaRouteInternals.buildQuotaDetailResponse>
+    >;
+    type SummaryResponse = Awaited<
+      ReturnType<typeof routeModule.quotaRouteInternals.buildQuotaSummaryResponse>
+    >;
 
-    let authFilesCallCount = 0;
-    let resolveFirstAuthFiles: MockJsonResponseResolver | null = null;
+    let resolveDetail!: (value: DetailResponse) => void;
+    let resolveSummary!: (value: SummaryResponse) => void;
 
-    fetchMock.mockImplementation((input: string | URL) => {
-      const url = String(input);
-
-      if (url.endsWith("/auth-files")) {
-        authFilesCallCount += 1;
-        const currentAuthFilesCall = authFilesCallCount;
-
-        if (currentAuthFilesCall === 1) {
-          return new Promise<MockJsonResponse>((resolve) => {
-            resolveFirstAuthFiles = resolve;
-          });
-        }
-
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(authFilesResponse),
-          body: { cancel: vi.fn() },
-        });
-      }
-
-      if (url.endsWith("/api-call")) {
-        const currentAuthFilesCall = authFilesCallCount;
-        return Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              status_code: 200,
-              body: JSON.stringify({
-                rate_limit: {
-                  primary_window: {
-                    limit_window_seconds: 300,
-                    used_percent: currentAuthFilesCall === 1 ? 50 : 25,
-                    reset_at: currentAuthFilesCall === 1 ? 1774039200 : 1774039300,
-                  },
-                },
-              }),
-            }),
-          body: { cancel: vi.fn() },
-        });
-      }
-
-      throw new Error(`Unexpected fetch URL: ${url}`);
+    const detailBuilderPromise = new Promise<DetailResponse>((resolve) => {
+      resolveDetail = resolve;
+    });
+    const summaryBuilderPromise = new Promise<SummaryResponse>((resolve) => {
+      resolveSummary = resolve;
     });
 
-    const { GET } = await import("./route");
+    const detailSpy = vi
+      .spyOn(routeModule.quotaRouteInternals, "buildQuotaDetailResponse")
+      .mockImplementation(() => detailBuilderPromise);
+    const summarySpy = vi
+      .spyOn(routeModule.quotaRouteInternals, "buildQuotaSummaryResponse")
+      .mockImplementation(() => summaryBuilderPromise);
 
-    const detailPromise = GET(
+    const detailPromise = routeModule.GET(
       new Request("http://localhost/api/quota", {
         headers: { cookie: "session=test" },
       }) as unknown as NextRequest
     );
 
-    const summaryPromise = GET(
+    let detailSettled = false;
+    void detailPromise.then(() => {
+      detailSettled = true;
+    });
+
+    const summaryPromise = routeModule.GET(
       new Request("http://localhost/api/quota?view=summary", {
         headers: { cookie: "session=test" },
       }) as unknown as NextRequest
@@ -832,25 +815,56 @@ describe("GET /api/quota - imported provider normalization", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const resolvePendingAuthFiles = resolveFirstAuthFiles as MockJsonResponseResolver | null;
-    if (!resolvePendingAuthFiles) {
-      throw new Error("Expected first auth-files request to be pending");
-    }
+    expect(detailSpy).toHaveBeenCalledTimes(1);
+    expect(summarySpy).toHaveBeenCalledTimes(1);
 
-    resolvePendingAuthFiles({
-      ok: true,
-      json: () => Promise.resolve(authFilesResponse),
-      body: { cancel: vi.fn() },
+    resolveSummary({
+      providers: [
+        {
+          provider: "codex",
+          monitorMode: "window-based",
+          totalAccounts: 1,
+          activeAccounts: 1,
+          healthyAccounts: 1,
+          errorAccounts: 0,
+          windowCapacities: [],
+          lowCapacity: false,
+        },
+      ],
+      totals: { activeAccounts: 1, providerCount: 1, lowCapacityCount: 0 },
+      warnings: [],
     });
 
-    const [detailResponse, summaryResponse] = await Promise.all([detailPromise, summaryPromise]);
-    const detailData = await detailResponse.json();
+    const summaryResponse = await summaryPromise;
     const summaryData = await summaryResponse.json();
-
-    expect(detailData.accounts).toHaveLength(1);
     expect(summaryData.accounts).toBeUndefined();
-    expect(summaryData.providers).toBeDefined();
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(summaryData.providers).toEqual(
+      expect.arrayContaining([expect.objectContaining({ provider: "codex" })])
+    );
+    expect(summaryData.totals).toEqual({
+      activeAccounts: 1,
+      providerCount: 1,
+      lowCapacityCount: 0,
+    });
+    expect(detailSettled).toBe(false);
+
+    resolveDetail({
+      accounts: [
+        {
+          auth_index: "0",
+          provider: "codex",
+          email: "mixed@example.com",
+          supported: true,
+        },
+      ],
+    });
+
+    const detailResponse = await detailPromise;
+    const detailData = await detailResponse.json();
+
+    expect(detailData.accounts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ email: "mixed@example.com" })])
+    );
   });
 
   it("CLAUDE uppercase provider returns supported: true", async () => {
@@ -1277,5 +1291,680 @@ describe("GET /api/quota - imported provider normalization", () => {
       }),
       "Codex quota check failed"
     );
+  });
+
+  it("syncs Codex 401 results upstream and preserves the quota error text", async () => {
+    const authFilesResponse = {
+      files: [
+        {
+          auth_index: 0,
+          provider: "codex",
+          name: "codex-account",
+          email: "codex-401@example.com",
+          disabled: false,
+          status: "active",
+        },
+      ],
+    };
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 401,
+            body: JSON.stringify({ detail: "token expired" }),
+          }),
+        body: { cancel: vi.fn() },
+      });
+
+    const managementApiModule = await import("@/lib/providers/management-api");
+    const { GET } = await import("./route");
+
+    const response = await GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+    const data = await response.json();
+
+    expect(data.accounts[0].error).toBe("Codex OAuth token expired - re-authenticate in CLIProxyAPI");
+    expect(managementApiModule.syncOAuthAccountStatus).toHaveBeenCalledWith({
+      accountName: "codex-account",
+      provider: "codex",
+      status: "error",
+      statusMessage: "Codex OAuth token expired - re-authenticate in CLIProxyAPI",
+      unavailable: true,
+    });
+  });
+
+  it("syncs Codex 403 results upstream with a conservative unavailable status", async () => {
+    const authFilesResponse = {
+      files: [
+        {
+          auth_index: 0,
+          provider: "codex",
+          name: "codex-account",
+          email: "codex-403@example.com",
+          disabled: false,
+          status: "active",
+        },
+      ],
+    };
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 403,
+            body: JSON.stringify({ detail: "needs verification" }),
+          }),
+        body: { cancel: vi.fn() },
+      });
+
+    const managementApiModule = await import("@/lib/providers/management-api");
+    const { GET } = await import("./route");
+
+    const response = await GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+    const data = await response.json();
+
+    expect(data.accounts[0].error).toBe("Codex access denied - account may need verification");
+    expect(managementApiModule.syncOAuthAccountStatus).toHaveBeenCalledWith({
+      accountName: "codex-account",
+      provider: "codex",
+      status: "error",
+      statusMessage: "Codex access denied - account may need verification",
+      unavailable: true,
+    });
+  });
+
+  it("does not suppress retries after a failed Codex status sync attempt", async () => {
+    const authFilesResponse = {
+      files: [
+        {
+          auth_index: 0,
+          provider: "codex",
+          name: "codex-account",
+          email: "codex-retry@example.com",
+          disabled: false,
+          status: "active",
+        },
+      ],
+    };
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 401,
+            body: JSON.stringify({ detail: "token expired" }),
+          }),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 401,
+            body: JSON.stringify({ detail: "token expired" }),
+          }),
+        body: { cancel: vi.fn() },
+      });
+
+    const managementApiModule = await import("@/lib/providers/management-api");
+    vi.mocked(managementApiModule.syncOAuthAccountStatus)
+      .mockRejectedValueOnce(new Error("sync exploded"))
+      .mockResolvedValueOnce({ ok: true });
+
+    const { GET } = await import("./route");
+
+    const firstResponse = await GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+    const firstData = await firstResponse.json();
+
+    const secondResponse = await GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+    const secondData = await secondResponse.json();
+
+    expect(firstData.accounts[0].error).toBe("Codex OAuth token expired - re-authenticate in CLIProxyAPI");
+    expect(secondData.accounts[0].error).toBe("Codex OAuth token expired - re-authenticate in CLIProxyAPI");
+    expect(managementApiModule.syncOAuthAccountStatus).toHaveBeenCalledTimes(2);
+    expect(managementApiModule.syncOAuthAccountStatus).toHaveBeenNthCalledWith(1, {
+      accountName: "codex-account",
+      provider: "codex",
+      status: "error",
+      statusMessage: "Codex OAuth token expired - re-authenticate in CLIProxyAPI",
+      unavailable: true,
+    });
+    expect(managementApiModule.syncOAuthAccountStatus).toHaveBeenNthCalledWith(2, {
+      accountName: "codex-account",
+      provider: "codex",
+      status: "error",
+      statusMessage: "Codex OAuth token expired - re-authenticate in CLIProxyAPI",
+      unavailable: true,
+    });
+  });
+
+  it("dedupes overlapping identical Codex sync attempts to a single upstream call", async () => {
+    const authFilesResponse = {
+      files: [
+        {
+          auth_index: 0,
+          provider: "codex",
+          name: "codex-account",
+          email: "codex-concurrent@example.com",
+          disabled: false,
+          status: "error",
+        },
+      ],
+    };
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 200,
+            body: JSON.stringify({
+              rate_limit: {
+                primary_window: {
+                  limit_window_seconds: 300,
+                  used_percent: 25,
+                  reset_at: 1774039200,
+                },
+              },
+            }),
+          }),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 200,
+            body: JSON.stringify({
+              rate_limit: {
+                primary_window: {
+                  limit_window_seconds: 300,
+                  used_percent: 25,
+                  reset_at: 1774039200,
+                },
+              },
+            }),
+          }),
+        body: { cancel: vi.fn() },
+      });
+
+    const managementApiModule = await import("@/lib/providers/management-api");
+
+    let resolveSync: ((value: { ok: true }) => void) | undefined;
+    const syncPromise = new Promise<{ ok: true }>((resolve) => {
+      resolveSync = resolve;
+    });
+    vi.mocked(managementApiModule.syncOAuthAccountStatus).mockReturnValue(syncPromise);
+
+    const { GET } = await import("./route");
+
+    const firstResponsePromise = GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+    const secondResponsePromise = GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+
+    await vi.waitFor(() => {
+      expect(managementApiModule.syncOAuthAccountStatus).toHaveBeenCalledTimes(1);
+    });
+
+    resolveSync?.({ ok: true });
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      firstResponsePromise,
+      secondResponsePromise,
+    ]);
+
+    await expect(firstResponse.json()).resolves.toMatchObject({
+      accounts: [
+        {
+          provider: "codex",
+          groups: expect.any(Array),
+        },
+      ],
+    });
+    await expect(secondResponse.json()).resolves.toMatchObject({
+      accounts: [
+        {
+          provider: "codex",
+          groups: expect.any(Array),
+        },
+      ],
+    });
+
+    expect(managementApiModule.syncOAuthAccountStatus).toHaveBeenCalledTimes(1);
+    expect(managementApiModule.syncOAuthAccountStatus).toHaveBeenCalledWith({
+      accountName: "codex-account",
+      provider: "codex",
+      status: "active",
+      statusMessage: null,
+      unavailable: false,
+    });
+  });
+
+  it("syncs successful Codex quota checks back to active and available", async () => {
+    const authFilesResponse = {
+      files: [
+        {
+          auth_index: 0,
+          provider: "codex",
+          name: "codex-account",
+          email: "codex-success@example.com",
+          disabled: false,
+          status: "error",
+        },
+      ],
+    };
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 200,
+            body: JSON.stringify({
+              rate_limit: {
+                primary_window: {
+                  limit_window_seconds: 300,
+                  used_percent: 25,
+                  reset_at: 1774039200,
+                },
+              },
+            }),
+          }),
+        body: { cancel: vi.fn() },
+      });
+
+    const managementApiModule = await import("@/lib/providers/management-api");
+    const { GET } = await import("./route");
+
+    const response = await GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+    const data = await response.json();
+
+    expect(data.accounts[0].error).toBeUndefined();
+    expect(data.accounts[0].groups).toBeDefined();
+    expect(managementApiModule.syncOAuthAccountStatus).toHaveBeenCalledWith({
+      accountName: "codex-account",
+      provider: "codex",
+      status: "active",
+      statusMessage: null,
+      unavailable: false,
+    });
+  });
+
+  it("dedupes repeated successful Codex recovery syncs inside the window and retries after expiry", async () => {
+    const authFilesResponse = {
+      files: [
+        {
+          auth_index: 0,
+          provider: "codex",
+          name: "codex-account",
+          email: "codex-dedupe@example.com",
+          disabled: false,
+          status: "error",
+        },
+      ],
+    };
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 200,
+            body: JSON.stringify({
+              rate_limit: {
+                primary_window: {
+                  limit_window_seconds: 300,
+                  used_percent: 25,
+                  reset_at: 1774039200,
+                },
+              },
+            }),
+          }),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 200,
+            body: JSON.stringify({
+              rate_limit: {
+                primary_window: {
+                  limit_window_seconds: 300,
+                  used_percent: 25,
+                  reset_at: 1774039200,
+                },
+              },
+            }),
+          }),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 200,
+            body: JSON.stringify({
+              rate_limit: {
+                primary_window: {
+                  limit_window_seconds: 300,
+                  used_percent: 25,
+                  reset_at: 1774039200,
+                },
+              },
+            }),
+          }),
+        body: { cancel: vi.fn() },
+      });
+
+    const dateNowSpy = vi
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(1_005)
+      .mockReturnValueOnce(20_000)
+      .mockReturnValueOnce(31_100)
+      .mockReturnValueOnce(31_105);
+
+    const managementApiModule = await import("@/lib/providers/management-api");
+    const { GET } = await import("./route");
+
+    const firstResponse = await GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+    const secondResponse = await GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+    const thirdResponse = await GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+
+    await expect(firstResponse.json()).resolves.toMatchObject({
+      accounts: [
+        {
+          provider: "codex",
+          groups: expect.any(Array),
+        },
+      ],
+    });
+    await expect(secondResponse.json()).resolves.toMatchObject({
+      accounts: [
+        {
+          provider: "codex",
+          groups: expect.any(Array),
+        },
+      ],
+    });
+    await expect(thirdResponse.json()).resolves.toMatchObject({
+      accounts: [
+        {
+          provider: "codex",
+          groups: expect.any(Array),
+        },
+      ],
+    });
+
+    expect(managementApiModule.syncOAuthAccountStatus).toHaveBeenCalledTimes(2);
+    expect(managementApiModule.syncOAuthAccountStatus).toHaveBeenNthCalledWith(1, {
+      accountName: "codex-account",
+      provider: "codex",
+      status: "active",
+      statusMessage: null,
+      unavailable: false,
+    });
+    expect(managementApiModule.syncOAuthAccountStatus).toHaveBeenNthCalledWith(2, {
+      accountName: "codex-account",
+      provider: "codex",
+      status: "active",
+      statusMessage: null,
+      unavailable: false,
+    });
+
+    dateNowSpy.mockRestore();
+  });
+
+  it("continues quota handling when Codex status sync throws", async () => {
+    const authFilesResponse = {
+      files: [
+        {
+          auth_index: 0,
+          provider: "codex",
+          name: "codex-account",
+          email: "codex-401@example.com",
+          disabled: false,
+          status: "active",
+        },
+      ],
+    };
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 401,
+            body: JSON.stringify({ detail: "token expired" }),
+          }),
+        body: { cancel: vi.fn() },
+      });
+
+    const managementApiModule = await import("@/lib/providers/management-api");
+    const loggerModule = await import("@/lib/logger");
+    vi.mocked(managementApiModule.syncOAuthAccountStatus).mockRejectedValueOnce(
+      new Error("sync exploded")
+    );
+
+    const { GET } = await import("./route");
+
+    const response = await GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+    const data = await response.json();
+
+    expect(data.accounts[0].error).toBe("Codex OAuth token expired - re-authenticate in CLIProxyAPI");
+    expect(loggerModule.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "codex",
+        auth_index: "0",
+        accountName: "codex-account",
+        error: expect.any(Error),
+      }),
+      "Failed to sync Codex OAuth account status from quota outcome"
+    );
+  });
+
+  it("continues quota handling when Codex status sync returns a non-ok result", async () => {
+    const authFilesResponse = {
+      files: [
+        {
+          auth_index: 0,
+          provider: "codex",
+          name: "codex-account",
+          email: "codex-403@example.com",
+          disabled: false,
+          status: "active",
+        },
+      ],
+    };
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 403,
+            body: JSON.stringify({ detail: "needs verification" }),
+          }),
+        body: { cancel: vi.fn() },
+      });
+
+    const managementApiModule = await import("@/lib/providers/management-api");
+    const loggerModule = await import("@/lib/logger");
+    vi.mocked(managementApiModule.syncOAuthAccountStatus).mockResolvedValueOnce({
+      ok: false,
+      error: "management api unavailable",
+    });
+
+    const { GET } = await import("./route");
+
+    const response = await GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.accounts[0].error).toBe("Codex access denied - account may need verification");
+    expect(loggerModule.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "codex",
+        auth_index: "0",
+        accountName: "codex-account",
+        error: "management api unavailable",
+      }),
+      "Failed to sync Codex OAuth account status from quota outcome"
+    );
+  });
+
+  it("does not sync generic Codex failures upstream", async () => {
+    const authFilesResponse = {
+      files: [
+        {
+          auth_index: 0,
+          provider: "codex",
+          name: "codex-account",
+          email: "codex-500@example.com",
+          disabled: false,
+          status: "active",
+        },
+      ],
+    };
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(authFilesResponse),
+        body: { cancel: vi.fn() },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            status_code: 500,
+            body: JSON.stringify({ detail: "upstream exploded" }),
+          }),
+        body: { cancel: vi.fn() },
+      });
+
+    const managementApiModule = await import("@/lib/providers/management-api");
+    const { GET } = await import("./route");
+
+    const response = await GET(
+      new Request("http://localhost/api/quota", {
+        headers: { cookie: "session=test" },
+      }) as unknown as NextRequest
+    );
+    const data = await response.json();
+
+    expect(data.accounts[0].error).toBe("Codex API error: 500 - upstream exploded");
+    expect(managementApiModule.syncOAuthAccountStatus).not.toHaveBeenCalled();
   });
 });
