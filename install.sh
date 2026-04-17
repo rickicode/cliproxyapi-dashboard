@@ -39,6 +39,79 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+log_override_manual_merge_warning() {
+    local override_file=$1
+    local reason=$2
+    local snippet=$3
+
+    log_warning "$override_file already exists; the installer will not rewrite or merge it automatically."
+    log_warning "$reason"
+    log_warning "Review the existing root override and add the following under 'services: dashboard:' if needed:"
+    while IFS= read -r snippet_line; do
+        [ -n "$snippet_line" ] && log_warning "    $snippet_line"
+    done <<< "$snippet"
+}
+
+root_override_has_dashboard_host_gateway() {
+    local override_file=$1
+
+    python3 - "$override_file" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        lines = fh.readlines()
+except OSError:
+    sys.exit(1)
+
+stack = []
+list_path = None
+target_value = 'host.docker.internal:host-gateway'
+
+for raw_line in lines:
+    line = raw_line.rstrip("\n")
+    stripped = line.strip()
+
+    if not stripped or stripped.startswith("#"):
+        continue
+
+    indent = len(line) - len(line.lstrip(" "))
+
+    while stack and indent <= stack[-1][0]:
+        stack.pop()
+
+    if list_path is not None:
+        if indent > list_path[0]:
+            item_match = re.match(r'^\s*-\s*["\']?([^"\'#]+)["\']?\s*(?:#.*)?$', line)
+            if item_match and [segment for _, segment in stack] == list_path[1]:
+                if item_match.group(1).strip() == target_value:
+                    sys.exit(0)
+            continue
+        list_path = None
+
+    key_match = re.match(r'^\s*([A-Za-z0-9_.-]+):\s*(.*?)\s*(?:#.*)?$', line)
+    if not key_match:
+        continue
+
+    key = key_match.group(1)
+    value = key_match.group(2)
+    stack.append((indent, key))
+    current_path = [segment for _, segment in stack]
+
+    if current_path == ["services", "dashboard", "extra_hosts"]:
+        if value.startswith("[") and value.endswith("]"):
+            items = [item.strip().strip('"\'') for item in value[1:-1].split(",") if item.strip()]
+            if target_value in items:
+                sys.exit(0)
+        list_path = (indent, current_path)
+
+sys.exit(1)
+PY
+}
+
 # Preflight conflict detection functions
 check_port_conflict() {
     local port=$1
@@ -90,6 +163,243 @@ check_container_conflicts() {
     fi
 }
 
+check_postgres_url_reachability() {
+    local database_url=$1
+    local scheme_and_rest=${database_url%%://*}
+    if [[ "$scheme_and_rest" != "postgres" && "$scheme_and_rest" != "postgresql" ]]; then
+        log_error "Invalid PostgreSQL URL scheme"
+        return 1
+    fi
+
+    local url_without_scheme=${database_url#*://}
+    local authority=${url_without_scheme%%/*}
+    authority=${authority%%\?*}
+    authority=${authority%%#*}
+    authority=${authority##*@}
+
+    if [ -z "$authority" ]; then
+        log_error "DATABASE_URL must include a hostname"
+        return 1
+    fi
+
+    local host=""
+    local port="5432"
+
+    if [[ "$authority" == \[*\]* ]]; then
+        host=${authority#\[}
+        host=${host%%\]*}
+
+        local remainder=${authority#*\]}
+        if [[ "$remainder" == :* ]]; then
+            port=${remainder#:}
+        fi
+    else
+        if [[ "$authority" == *:* ]]; then
+            host=${authority%:*}
+            port=${authority##*:}
+        else
+            host=$authority
+        fi
+    fi
+
+    host=${host%%\?*}
+    host=${host%%#*}
+    port=${port%%\?*}
+    port=${port%%#*}
+
+    if [ -z "$host" ]; then
+        log_error "DATABASE_URL must include a hostname"
+        return 1
+    fi
+
+    if [[ ! "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        log_error "DATABASE_URL must include a valid PostgreSQL port"
+        return 1
+    fi
+
+    local resolved_host
+    if ! resolved_host=$(getent ahosts "$host" 2>/dev/null | while read -r address _; do
+        if [ -n "$address" ]; then
+            printf '%s\n' "$address"
+            break
+        fi
+    done); then
+        resolved_host=""
+    fi
+
+    if [ -z "$resolved_host" ]; then
+        log_error "Cannot resolve PostgreSQL hostname '$host'"
+        return 1
+    fi
+
+    if ! timeout 5 bash -c '</dev/tcp/"$1"/"$2"' _ "$host" "$port" 2>/dev/null; then
+        log_error "Cannot reach PostgreSQL server at $host:$port"
+        return 1
+    fi
+
+    local validation_output="${host}:${port}"
+
+    log_success "External database host reachable at $validation_output"
+    log_info "Reachability preflight checks host/port connectivity only; credentials, TLS, and schema compatibility are validated later by the application/runtime."
+    return 0
+}
+
+escape_compose_env_value() {
+    local value=$1
+
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//$/\\$}
+    value=${value//$'\n'/\\n}
+    value=${value//$'\r'/\\r}
+
+    printf '"%s"' "$value"
+}
+
+write_env_assignment() {
+    local file_path=$1
+    local key=$2
+    local value=$3
+
+    printf '%s=%s\n' "$key" "$(escape_compose_env_value "$value")" >> "$file_path"
+}
+
+read_env_value() {
+    local file_path=$1
+    local key=$2
+
+    python3 - "$file_path" "$key" <<'PY'
+import shlex
+import sys
+
+file_path, key = sys.argv[1], sys.argv[2]
+
+try:
+    with open(file_path, "r", encoding="utf-8") as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            current_key, raw_value = line.split("=", 1)
+            if current_key != key:
+                continue
+            parsed = shlex.split(raw_value, posix=True)
+            if not parsed:
+                print("")
+            else:
+                print(parsed[0])
+            break
+except FileNotFoundError:
+    pass
+PY
+}
+
+validate_kept_env_db_mode() {
+    local env_file=$1
+    local db_mode=$2
+
+    case "$db_mode" in
+        external)
+            local existing_database_url
+            existing_database_url=$(read_env_value "$env_file" "DATABASE_URL")
+
+            if [ -z "$existing_database_url" ]; then
+                log_error "Existing .env uses DB_MODE=external but DATABASE_URL is empty or missing. Refusing to continue with a kept .env because installer-managed outputs would not match a usable external database configuration. Set DATABASE_URL in $env_file or rerun and overwrite the .env file."
+                exit 1
+            fi
+            ;;
+        docker)
+            local existing_postgres_password
+            local existing_database_url
+            local expected_database_url
+
+            existing_postgres_password=$(read_env_value "$env_file" "POSTGRES_PASSWORD")
+            existing_database_url=$(read_env_value "$env_file" "DATABASE_URL")
+
+            if [ -z "$existing_postgres_password" ]; then
+                log_error "Existing .env uses DB_MODE=docker but POSTGRES_PASSWORD is empty or missing. Refusing to continue with a kept .env because installer-managed startup and runtime output expect the compose-managed postgres service credentials to remain defined. Set POSTGRES_PASSWORD in $env_file or rerun and overwrite the .env file."
+                exit 1
+            fi
+
+            expected_database_url="postgresql://cliproxyapi:${existing_postgres_password}@postgres:5432/cliproxyapi"
+            if [ "$existing_database_url" != "$expected_database_url" ]; then
+                log_error "Existing .env uses DB_MODE=docker but DATABASE_URL does not match the compose-managed postgres configuration expected by the installer. Expected DATABASE_URL to be '$expected_database_url'. Update $env_file to keep docker-managed database settings coherent or rerun and overwrite the .env file."
+                exit 1
+            fi
+            ;;
+        *)
+            log_error "Unsupported DB_MODE '$db_mode' found in existing .env"
+            exit 1
+            ;;
+    esac
+}
+
+user_crontab_exists() {
+    crontab -l >/dev/null 2>&1
+}
+
+remove_backup_cron_entry() {
+    local cron_comment=$1
+    shift
+    local backup_script_path=$1
+    local rotate_backups_script_path=$2
+    local current_crontab
+    local cleaned_crontab
+
+    if ! user_crontab_exists; then
+        return 1
+    fi
+
+    current_crontab=$(mktemp)
+    cleaned_crontab=$(mktemp)
+    trap 'rm -f "$current_crontab" "$cleaned_crontab"' RETURN
+
+    crontab -l > "$current_crontab"
+
+    if python3 - "$current_crontab" "$cleaned_crontab" "$cron_comment" "$backup_script_path" "$rotate_backups_script_path" <<'PY'
+import sys
+
+source_path, dest_path, cron_comment = sys.argv[1], sys.argv[2], sys.argv[3]
+backup_script_path, rotate_backups_script_path = sys.argv[4], sys.argv[5]
+legacy_comment = f"# {cron_comment}"
+
+with open(source_path, "r", encoding="utf-8") as source_file:
+    lines = source_file.readlines()
+
+cleaned_lines = []
+skip_next = False
+removed = False
+
+for line in lines:
+    stripped = line.rstrip("\n")
+
+    if skip_next:
+        skip_next = False
+        if backup_script_path in stripped and rotate_backups_script_path in stripped:
+            removed = True
+            continue
+        cleaned_lines.append(line)
+        continue
+
+    if stripped == legacy_comment:
+        skip_next = True
+        continue
+
+    cleaned_lines.append(line)
+
+with open(dest_path, "w", encoding="utf-8") as dest_file:
+    dest_file.writelines(cleaned_lines)
+
+sys.exit(0 if removed else 1)
+PY
+    then
+
+        crontab "$cleaned_crontab"
+    else
+        return 1
+    fi
+}
+
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
     log_error "This script must be run as root (use sudo)"
@@ -106,23 +416,20 @@ if ! command -v apt-get &> /dev/null; then
     exit 1
 fi
 
-# Detect Linux distribution and codename for Docker repo setup
+# Detect Linux distribution for installer validation
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     DISTRO_ID="${ID:-}"
-    DISTRO_CODENAME="${VERSION_CODENAME:-}"
 else
     log_error "Cannot detect Linux distribution (/etc/os-release not found)"
     exit 1
 fi
 
-# Validate distro and set Docker repo URL
+# Validate distro
 case "$DISTRO_ID" in
     ubuntu)
-        DOCKER_REPO_URL="https://download.docker.com/linux/ubuntu"
         ;;
     debian)
-        DOCKER_REPO_URL="https://download.docker.com/linux/debian"
         ;;
     *)
         log_error "Unsupported distribution: $DISTRO_ID (only Ubuntu and Debian supported)"
@@ -130,14 +437,7 @@ case "$DISTRO_ID" in
         ;;
 esac
 
-# Validate codename
-if [ -z "$DISTRO_CODENAME" ]; then
-    log_error "Cannot determine distribution codename (required for Docker repo)"
-    exit 1
-fi
-
-log_info "Detected distribution: $DISTRO_ID ($DISTRO_CODENAME)"
-log_info "Docker repository: $DOCKER_REPO_URL"
+log_info "Detected distribution: $DISTRO_ID"
 
 log_info "Starting CLIProxyAPI Stack installation..."
 echo ""
@@ -201,6 +501,55 @@ else
     PERPLEXITY_ENABLED=0
 fi
 
+# Database mode selection
+echo ""
+log_info "Select production database mode:"
+echo "  1) Docker-managed Postgres"
+echo "  2) External/custom Postgres"
+while true; do
+    read -p "Enter choice [1-2]: " DB_MODE_CHOICE
+    case $DB_MODE_CHOICE in
+        1)
+            DB_MODE="docker"
+            DB_MODE_LABEL="Docker-managed Postgres"
+            break
+            ;;
+        2)
+            DB_MODE="external"
+            DB_MODE_LABEL="external/custom Postgres"
+            break
+            ;;
+        *)
+            log_error "Invalid choice"
+            ;;
+    esac
+done
+
+if [ "$DB_MODE" = "external" ]; then
+    echo ""
+    log_info "Enter the full PostgreSQL connection string for the production dashboard/runtime."
+    log_info "Example: postgresql://user:password@db.example.com:5432/cliproxyapi"
+    while true; do
+        read -r -p "External DATABASE_URL: " DATABASE_URL
+        if [ -z "$DATABASE_URL" ]; then
+            log_error "DATABASE_URL cannot be empty"
+            continue
+        fi
+        if [[ ! "$DATABASE_URL" =~ ^postgres(ql)?:// ]]; then
+            log_error "DATABASE_URL must start with postgres:// or postgresql://"
+            continue
+        fi
+        log_info "Running external database reachability preflight..."
+        if ! check_postgres_url_reachability "$DATABASE_URL"; then
+            log_error "External DATABASE_URL preflight failed. Fix the connection details or network access before continuing."
+            continue
+        fi
+        break
+    done
+else
+    DATABASE_URL=""
+fi
+
 # Backup interval
 echo ""
 log_info "Select backup interval:"
@@ -231,6 +580,46 @@ while true; do
     esac
 done
 
+if [ "$DB_MODE" = "external" ] && [ "$BACKUP_INTERVAL" != "none" ]; then
+    log_warning "Installer-managed automated backups currently support only Docker-managed Postgres."
+    log_warning "Disabling automated backup scheduling for external/custom Postgres mode."
+    BACKUP_INTERVAL="none"
+    BACKUP_RETENTION=0
+fi
+
+ENV_FILE="$INSTALL_DIR/infrastructure/.env"
+SKIP_ENV=0
+
+if [ -f "$ENV_FILE" ]; then
+    log_warning ".env file already exists"
+    read -p "Overwrite .env file? [y/N]: " OVERWRITE_ENV
+    if [[ ! "$OVERWRITE_ENV" =~ ^[Yy]$ ]]; then
+        log_info "Keeping existing .env file"
+        SKIP_ENV=1
+
+        EXISTING_DB_MODE=$(read_env_value "$ENV_FILE" "DB_MODE")
+        if [ -n "$EXISTING_DB_MODE" ] && [ "$EXISTING_DB_MODE" != "$DB_MODE" ]; then
+            log_warning "Existing .env DB_MODE is '$EXISTING_DB_MODE'; overriding interactive selection '$DB_MODE' for installer-managed outputs"
+            DB_MODE="$EXISTING_DB_MODE"
+            if [ "$DB_MODE" = "docker" ]; then
+                DB_MODE_LABEL="Docker-managed Postgres"
+            elif [ "$DB_MODE" = "external" ]; then
+                DB_MODE_LABEL="external/custom Postgres"
+                BACKUP_INTERVAL="none"
+                BACKUP_RETENTION=0
+            else
+                log_error "Unsupported DB_MODE '$DB_MODE' found in existing .env"
+                exit 1
+            fi
+        elif [ -z "$EXISTING_DB_MODE" ]; then
+            log_error "Existing .env does not define DB_MODE. Refusing to continue with a kept .env because installer-managed outputs could disagree with runtime configuration. Add DB_MODE to $ENV_FILE or rerun and overwrite the .env file."
+            exit 1
+        fi
+
+        validate_kept_env_db_mode "$ENV_FILE" "$DB_MODE"
+    fi
+fi
+
 echo ""
 log_info "Configuration summary:"
 log_info "  Domain: $DOMAIN"
@@ -239,6 +628,7 @@ log_info "  API: ${API_SUBDOMAIN}.${DOMAIN}"
 log_info "  External reverse proxy: $([ $EXTERNAL_PROXY -eq 1 ] && echo 'enabled' || echo 'disabled')"
 log_info "  OAuth callbacks: $([ $OAUTH_ENABLED -eq 1 ] && echo 'enabled' || echo 'disabled')"
 log_info "  Perplexity Sidecar: $([ $PERPLEXITY_ENABLED -eq 1 ] && echo 'enabled' || echo 'disabled')"
+log_info "  Database mode: $DB_MODE_LABEL"
 log_info "  Backup interval: $BACKUP_INTERVAL"
 echo ""
 
@@ -344,53 +734,65 @@ fi
 log_info "=== Docker Installation ==="
 echo ""
 
+DOCKER_PRESENT=0
+COMPOSE_PRESENT=0
+
 if command -v docker &> /dev/null; then
+    DOCKER_PRESENT=1
     DOCKER_VERSION=$(docker --version)
     log_success "Docker already installed: $DOCKER_VERSION"
-    
-    # Check if Docker Compose plugin is installed
-    if docker compose version &> /dev/null; then
-        COMPOSE_VERSION=$(docker compose version)
-        log_success "Docker Compose already installed: $COMPOSE_VERSION"
-    else
-        log_warning "Docker Compose plugin not found, installing..."
-        apt-get update
-        apt-get install -y docker-compose-plugin
-        log_success "Docker Compose plugin installed"
-    fi
-else
-    log_info "Installing Docker..."
-    
-    # Update package index
-    apt-get update
-    
-    # Install prerequisites
-    apt-get install -y \
-        ca-certificates \
-        curl \
-        gnupg \
-        lsb-release
-    
-    # Add Docker GPG key
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL "$DOCKER_REPO_URL/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    chmod a+r /etc/apt/keyrings/docker.gpg
-    
-    # Add Docker repository
-    echo \
-        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] $DOCKER_REPO_URL \
-        $DISTRO_CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-    
-    # Install Docker Engine
-    apt-get update
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    
-    # Enable and start Docker
-    systemctl enable docker
-    systemctl start docker
-    
-    log_success "Docker installed successfully"
 fi
+
+if [ $DOCKER_PRESENT -eq 1 ] && docker compose version &> /dev/null; then
+    COMPOSE_PRESENT=1
+    COMPOSE_VERSION=$(docker compose version)
+    log_success "Docker Compose already installed: $COMPOSE_VERSION"
+fi
+
+if [ $DOCKER_PRESENT -eq 0 ] || [ $COMPOSE_PRESENT -eq 0 ]; then
+    if [ $DOCKER_PRESENT -eq 1 ]; then
+        log_warning "Docker is installed but 'docker compose' is missing; repairing Docker installation via get.docker.com..."
+    else
+        log_info "Installing Docker via get.docker.com..."
+    fi
+
+    apt-get update
+    apt-get install -y ca-certificates curl
+    curl -sSL https://get.docker.com | sh
+
+    if ! command -v docker &> /dev/null; then
+        log_error "Docker installation completed but 'docker' command was not found"
+        exit 1
+    fi
+
+    if ! docker compose version &> /dev/null; then
+        log_error "Docker installation completed but 'docker compose' is not available"
+        exit 1
+    fi
+
+    DOCKER_VERSION=$(docker --version)
+    COMPOSE_VERSION=$(docker compose version)
+    log_success "Docker installed successfully: $DOCKER_VERSION"
+    log_success "Docker Compose available: $COMPOSE_VERSION"
+else
+    DOCKER_VERSION=$(docker --version)
+    COMPOSE_VERSION=$(docker compose version)
+fi
+
+if ! command -v docker &> /dev/null; then
+    log_error "Docker is required but was not found after installation checks"
+    exit 1
+fi
+
+if ! docker compose version &> /dev/null; then
+    log_error "Docker Compose v2 is required but is not available"
+    exit 1
+fi
+
+DOCKER_VERSION=$(docker --version)
+COMPOSE_VERSION=$(docker compose version)
+log_info "Verified Docker: $DOCKER_VERSION"
+log_info "Verified Docker Compose: $COMPOSE_VERSION"
 
 echo ""
 
@@ -495,9 +897,15 @@ echo ""
 
 JWT_SECRET=$(openssl rand -base64 32)
 MANAGEMENT_API_KEY=$(openssl rand -hex 32)
-POSTGRES_PASSWORD=$(openssl rand -hex 32)
 COLLECTOR_API_KEY=$(openssl rand -hex 32)
 PROVIDER_ENCRYPTION_KEY=$(openssl rand -hex 32)
+
+if [ "$DB_MODE" = "docker" ]; then
+    POSTGRES_PASSWORD=$(openssl rand -hex 32)
+    DATABASE_URL="postgresql://cliproxyapi:${POSTGRES_PASSWORD}@postgres:5432/cliproxyapi"
+else
+    POSTGRES_PASSWORD=""
+fi
 
 if [ $PERPLEXITY_ENABLED -eq 1 ]; then
     PERPLEXITY_SIDECAR_SECRET=$(openssl rand -hex 32)
@@ -514,21 +922,6 @@ echo ""
 log_info "=== Environment Configuration ==="
 echo ""
 
-ENV_FILE="$INSTALL_DIR/infrastructure/.env"
-
-if [ -f "$ENV_FILE" ]; then
-    log_warning ".env file already exists"
-    read -p "Overwrite .env file? [y/N]: " OVERWRITE_ENV
-    if [[ ! "$OVERWRITE_ENV" =~ ^[Yy]$ ]]; then
-        log_info "Keeping existing .env file"
-        SKIP_ENV=1
-    else
-        SKIP_ENV=0
-    fi
-else
-    SKIP_ENV=0
-fi
-
 if [ $SKIP_ENV -eq 0 ]; then
     log_info "Creating .env file..."
 
@@ -542,8 +935,25 @@ DASHBOARD_SUBDOMAIN=$DASHBOARD_SUBDOMAIN
 API_SUBDOMAIN=$API_SUBDOMAIN
 
 # Database configuration
-DATABASE_URL=postgresql://cliproxyapi:${POSTGRES_PASSWORD}@postgres:5432/cliproxyapi
+DB_MODE=$DB_MODE
+
+EOF
+
+    write_env_assignment "$ENV_FILE" "DATABASE_URL" "$DATABASE_URL"
+
+    if [ "$DB_MODE" = "docker" ]; then
+        cat >> "$ENV_FILE" << EOF
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+EOF
+    else
+        cat >> "$ENV_FILE" << EOF
+# External/custom Postgres selected during install.
+# POSTGRES_PASSWORD is intentionally omitted because the production compose-managed
+# Postgres container is not the intended database for this install mode.
+EOF
+    fi
+
+    cat >> "$ENV_FILE" << EOF
 
 # Dashboard secrets
 JWT_SECRET=$JWT_SECRET
@@ -609,25 +1019,27 @@ fi
 if [ $SKIP_SERVICE -eq 0 ]; then
     log_info "Creating systemd service to restore the compose stack on boot..."
 
-    # When using an external reverse proxy, exclude Caddy from startup by naming
-    # services explicitly. This keeps boot-time reconciliation aligned with the
-    # chosen deployment shape instead of changing steady-state restart behavior.
+    # Always name startup services explicitly so boot-time reconciliation honors
+    # the chosen reverse-proxy mode consistently.
     # NOTE: when services are listed explicitly on the command line Docker Compose
     # does NOT auto-start profiled services from COMPOSE_PROFILES, so
     # perplexity-sidecar must also be listed here when it is enabled.
+    # Keep postgres in the explicit service list for both DB modes. In external DB
+    # mode the bundled postgres container remains an inert dependency placeholder
+    # because dashboard still depends on the postgres service at runtime.
+    COMPOSE_SERVICES="postgres docker-proxy cliproxyapi dashboard"
+    if [ $EXTERNAL_PROXY -eq 0 ]; then
+        COMPOSE_SERVICES="caddy $COMPOSE_SERVICES"
+    fi
+    if [ $PERPLEXITY_ENABLED -eq 1 ]; then
+        COMPOSE_SERVICES="$COMPOSE_SERVICES perplexity-sidecar"
+    fi
+
+    COMPOSE_START_CMD="/usr/bin/docker compose --env-file $INSTALL_DIR/infrastructure/.env -f $INSTALL_DIR/docker-compose.yml up -d --wait $COMPOSE_SERVICES"
     if [ $EXTERNAL_PROXY -eq 1 ]; then
-        COMPOSE_SERVICES="postgres cliproxyapi docker-proxy dashboard"
-        if [ $PERPLEXITY_ENABLED -eq 1 ]; then
-            COMPOSE_SERVICES="$COMPOSE_SERVICES perplexity-sidecar"
-        fi
-        COMPOSE_START_CMD="/usr/bin/docker compose up -d --wait $COMPOSE_SERVICES"
-        COMPOSE_DESC="(without Caddy - using external reverse proxy)"
+        COMPOSE_DESC="(without Caddy - using external reverse proxy, database mode: $DB_MODE; bundled postgres remains present/inert in external mode)"
     else
-        # No explicit list — Compose starts everything; COMPOSE_PROFILES in .env
-        # activates the perplexity profile when present. This is the normal boot
-        # recovery path for the full installed stack.
-        COMPOSE_START_CMD="/usr/bin/docker compose up -d --wait"
-        COMPOSE_DESC="(full stack)"
+        COMPOSE_DESC="(with integrated Caddy, database mode: $DB_MODE; bundled postgres remains present/inert in external mode)"
     fi
     log_info "Systemd compose command: $COMPOSE_START_CMD $COMPOSE_DESC"
 
@@ -641,9 +1053,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=true
-WorkingDirectory=$INSTALL_DIR/infrastructure
+WorkingDirectory=$INSTALL_DIR
 ExecStart=$COMPOSE_START_CMD
-ExecStop=/usr/bin/docker compose down
+ExecStop=/usr/bin/docker compose --env-file $INSTALL_DIR/infrastructure/.env -f $INSTALL_DIR/docker-compose.yml down
 TimeoutStartSec=300
 TimeoutStopSec=120
 
@@ -688,7 +1100,12 @@ chmod +x "$SCRIPTS_DIR/backup.sh"
 chmod +x "$SCRIPTS_DIR/restore.sh"
 chmod +x "$SCRIPTS_DIR/rotate-backups.sh"
 
-log_success "Backup/restore scripts ready in $SCRIPTS_DIR"
+if [ "$DB_MODE" = "external" ]; then
+    log_info "Backup helper scripts remain available in $SCRIPTS_DIR for Docker-managed Postgres installs only."
+    log_warning "Manual backup/restore helper scripts are not supported when using an external/custom PostgreSQL server."
+else
+    log_success "Backup/restore scripts ready in $SCRIPTS_DIR"
+fi
 
 echo ""
 
@@ -722,6 +1139,32 @@ if [ "$BACKUP_INTERVAL" != "none" ]; then
     fi
     
     echo ""
+elif [ "$DB_MODE" = "external" ]; then
+    log_info "Skipping installer-managed automated backups for external/custom Postgres mode."
+    log_info "Current backup/restore helper scripts target only the compose-managed postgres container."
+    log_info "Checking for an old installer-managed backup cron entry to remove..."
+
+    if user_crontab_exists; then
+        REMOVED_BACKUP_CRON_ENTRIES=0
+
+        if remove_backup_cron_entry "CLIProxyAPI daily backup" "$SCRIPTS_DIR/backup.sh" "$SCRIPTS_DIR/rotate-backups.sh"; then
+            REMOVED_BACKUP_CRON_ENTRIES=$((REMOVED_BACKUP_CRON_ENTRIES + 1))
+        fi
+
+        if remove_backup_cron_entry "CLIProxyAPI weekly backup" "$SCRIPTS_DIR/backup.sh" "$SCRIPTS_DIR/rotate-backups.sh"; then
+            REMOVED_BACKUP_CRON_ENTRIES=$((REMOVED_BACKUP_CRON_ENTRIES + 1))
+        fi
+
+        if [ "$REMOVED_BACKUP_CRON_ENTRIES" -gt 0 ]; then
+            log_success "Removed $REMOVED_BACKUP_CRON_ENTRIES installer-managed backup cron entr$( [ "$REMOVED_BACKUP_CRON_ENTRIES" -eq 1 ] && printf 'y' || printf 'ies' ) because external/custom Postgres mode is active"
+        else
+            log_info "No installer-managed backup cron entry found to remove"
+        fi
+    else
+        log_info "No user crontab found; no installer-managed backup cron entry needed cleanup"
+    fi
+
+    echo ""
 fi
 
 # ============================================================================
@@ -734,7 +1177,7 @@ echo ""
 log_info "Periodic usage collection is now handled by the dashboard app itself."
 log_info "Checking for a legacy installer-managed usage collector cron entry to remove..."
 
-if crontab -l >/dev/null 2>&1; then
+if user_crontab_exists; then
     CURRENT_CRONTAB=$(mktemp)
     CLEANED_CRONTAB=$(mktemp)
     trap 'rm -f "$CURRENT_CRONTAB" "$CLEANED_CRONTAB"' EXIT
@@ -791,25 +1234,41 @@ echo ""
 # EXTERNAL PROXY MODE SETUP
 # ============================================================================
 
+ROOT_OVERRIDE_CREATED_BY_INSTALLER=0
+
 if [ $EXTERNAL_PROXY -eq 1 ]; then
     echo ""
     log_info "=== External Proxy Mode Setup ==="
     echo ""
     
-    # Create docker-compose.override.yml to expose dashboard on localhost:8318
-    OVERRIDE_FILE="$INSTALL_DIR/infrastructure/docker-compose.override.yml"
-    
-    log_info "Creating docker-compose.override.yml to expose dashboard on 127.0.0.1:8318..."
-    
-    cat > "$OVERRIDE_FILE" << 'COMPOSE_OVERRIDE'
+    # Create docker-compose.override.yml beside the root production compose file so
+    # direct/root invocations automatically load it.
+    OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
+
+    EXTERNAL_PROXY_OVERRIDE_SNIPPET=$(cat <<'EOF'
+ports:
+  - "127.0.0.1:8318:8318"
+EOF
+)
+
+    if [ -f "$OVERRIDE_FILE" ]; then
+        log_override_manual_merge_warning "$OVERRIDE_FILE" "External proxy mode needs the dashboard port binding in the existing root override so your host reverse proxy can reach the dashboard on 127.0.0.1:8318." "$EXTERNAL_PROXY_OVERRIDE_SNIPPET"
+        log_info "Keeping the existing override file unchanged."
+    else
+        log_info "Creating docker-compose.override.yml to expose dashboard on 127.0.0.1:8318..."
+
+        cat > "$OVERRIDE_FILE" << 'COMPOSE_OVERRIDE'
 services:
   dashboard:
     ports:
       - "127.0.0.1:8318:8318"
 COMPOSE_OVERRIDE
-    
-    chmod 644 "$OVERRIDE_FILE"
-    log_success "Override file created at $OVERRIDE_FILE"
+        
+        chmod 644 "$OVERRIDE_FILE"
+        ROOT_OVERRIDE_CREATED_BY_INSTALLER=1
+        log_success "Override file created at $OVERRIDE_FILE"
+    fi
+
     log_info "Dashboard will be accessible at http://127.0.0.1:8318 for your reverse proxy"
     echo ""
 fi
@@ -1047,25 +1506,33 @@ WEBHOOK_HOST=http://host.docker.internal:9000
 DEPLOY_SECRET=$DEPLOY_SECRET
 EOF
     
-    OVERRIDE_FILE="$INSTALL_DIR/infrastructure/docker-compose.override.yml"
+    OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
+    WEBHOOK_OVERRIDE_SNIPPET=$(cat <<'EOF'
+extra_hosts:
+  - "host.docker.internal:host-gateway"
+EOF
+)
+
     if [ -f "$OVERRIDE_FILE" ]; then
-        # Check if extra_hosts already configured
-        if grep -q "extra_hosts" "$OVERRIDE_FILE"; then
-            log_info "extra_hosts already configured in override file"
+        if root_override_has_dashboard_host_gateway "$OVERRIDE_FILE"; then
+            log_info "dashboard.extra_hosts already includes host.docker.internal:host-gateway in override file"
+        elif [ "$ROOT_OVERRIDE_CREATED_BY_INSTALLER" -eq 1 ]; then
+            cat >> "$OVERRIDE_FILE" << 'OVERRIDE_APPEND'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+OVERRIDE_APPEND
+            log_success "Added dashboard.extra_hosts to installer-created override file"
         else
-            log_warn "docker-compose.override.yml exists but doesn't have extra_hosts."
-            log_warn "Please manually add the following under 'services: dashboard:':"
-            log_warn "    extra_hosts:"
-            log_warn "      - \"host.docker.internal:host-gateway\""
+            log_override_manual_merge_warning "$OVERRIDE_FILE" "Webhook-triggered dashboard updates require dashboard container access to the host webhook service via host.docker.internal. Because the root override already exists, the installer cannot safely merge dashboard.extra_hosts into that file for you." "$WEBHOOK_OVERRIDE_SNIPPET"
         fi
     else
-        # Create new override file
         cat > "$OVERRIDE_FILE" << 'OVERRIDE_NEW'
 services:
   dashboard:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 OVERRIDE_NEW
+        ROOT_OVERRIDE_CREATED_BY_INSTALLER=1
         log_success "Created docker-compose.override.yml with host networking"
     fi
     
@@ -1100,8 +1567,8 @@ echo "  2. Check status:"
 echo "     sudo systemctl status cliproxyapi-stack"
 echo ""
 echo "  3. View logs:"
-echo "     cd $INSTALL_DIR/infrastructure"
-echo "     docker compose logs -f"
+echo "     cd $INSTALL_DIR"
+echo "     docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f"
 echo ""
 if [ $EXTERNAL_PROXY -eq 1 ]; then
     echo "  4. Configure your reverse proxy:"
@@ -1123,10 +1590,21 @@ echo "  $([ $EXTERNAL_PROXY -eq 1 ] && echo 5 || echo 4). Create your admin acco
 echo "     API keys and providers through the Configuration page."
 echo ""
 log_info "Backup commands:"
-echo "  Manual backup:  $SCRIPTS_DIR/backup.sh"
-echo "  Restore:        $SCRIPTS_DIR/restore.sh <backup_file>"
-if [ "$BACKUP_INTERVAL" != "none" ]; then
+if [ "$DB_MODE" = "external" ]; then
+    echo "  Manual backup:  unsupported for external/custom Postgres installs"
+    echo "  Restore:        unsupported for external/custom Postgres installs"
+    echo "                  use your external database platform's native backup/restore workflow"
+elif [ "$BACKUP_INTERVAL" != "none" ]; then
+    echo "  Manual backup:  $SCRIPTS_DIR/backup.sh"
+    echo "  Restore:        $SCRIPTS_DIR/restore.sh <backup_file>"
     echo "  Automated:      $BACKUP_INTERVAL backups at 2 AM (keep last $BACKUP_RETENTION)"
+else
+    echo "  Manual backup:  $SCRIPTS_DIR/backup.sh"
+    echo "  Restore:        $SCRIPTS_DIR/restore.sh <backup_file>"
+fi
+if [ "$DB_MODE" = "external" ]; then
+    echo "  Automated:      disabled for external/custom Postgres installs"
+    echo "                  (current helper scripts only support compose-managed postgres)"
 fi
 echo ""
 log_warning "Secrets are stored in: $ENV_FILE (DO NOT commit to git)"

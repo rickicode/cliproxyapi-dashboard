@@ -4,34 +4,24 @@ import { validateOrigin } from "@/lib/auth/origin";
 import { prisma } from "@/lib/db";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { Errors, apiSuccess } from "@/lib/errors";
+import { access, readFile } from "fs/promises";
+import { ERROR_CODE, Errors, apiError, apiSuccess } from "@/lib/errors";
 import { UpdateProxySchema } from "@/lib/validation/schemas";
 import { logger } from "@/lib/logger";
 
 const execFileAsync = promisify(execFile);
 
 const CONTAINER_NAME = "cliproxyapi";
-const COMPOSE_FILE = "/opt/cliproxyapi/infrastructure/docker-compose.yml";
+const COMPOSE_FILE = "/opt/cliproxyapi/docker-compose.yml";
+const COMPOSE_ENV_FILE = "/opt/cliproxyapi/infrastructure/.env";
 const IMAGE_NAME = "eceasy/cli-proxy-api-plus";
+const ENV_FILE_REQUIRED_VARS = ["DATABASE_URL", "MANAGEMENT_API_KEY", "JWT_SECRET"] as const;
 
-interface PortBinding {
-  HostIp: string;
-  HostPort: string;
-}
-
-interface ContainerConfig {
-  env: string[];
-  volumes: string[];
-  networks: string[];
-  ports: string[];
-  restartPolicy: string;
-   configuredImage: string;
-}
-
-interface ContainerSnapshot {
-  config: ContainerConfig;
-   currentImageReference: string | null;
-  immutableImageReference: string | null;
+class ComposeCompatibilityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ComposeCompatibilityError";
+  }
 }
 
 interface DockerImageInspect {
@@ -52,43 +42,6 @@ function getCommandErrorText(error: unknown): string {
     return error.message;
   }
   return String(error);
-}
-
-async function getContainerConfig(): Promise<ContainerConfig> {
-  const { stdout } = await execFileAsync("docker", ["inspect", CONTAINER_NAME]);
-   const inspect = JSON.parse(stdout)[0] as DockerContainerInspect & {
-     Config: { Env?: string[]; Image?: string };
-     HostConfig: {
-       Binds?: string[];
-       PortBindings?: Record<string, PortBinding[]>;
-       RestartPolicy?: { Name?: string };
-     };
-     NetworkSettings?: { Networks?: Record<string, unknown> };
-   };
-  const config = inspect.Config;
-  const hostConfig = inspect.HostConfig;
-
-  const ports: string[] = [];
-  const portBindings: Record<string, PortBinding[]> =
-    hostConfig.PortBindings || {};
-
-  for (const containerPort of Object.keys(portBindings)) {
-    for (const binding of portBindings[containerPort] || []) {
-      const hostIp = binding.HostIp || "";
-      const hostPort = binding.HostPort;
-      const port = containerPort.replace("/tcp", "");
-      ports.push(hostIp ? `${hostIp}:${hostPort}:${port}` : `${hostPort}:${port}`);
-    }
-  }
-
-  return {
-    env: config.Env || [],
-    volumes: hostConfig.Binds || [],
-    networks: Object.keys(inspect.NetworkSettings?.Networks || {}),
-    ports,
-    restartPolicy: hostConfig.RestartPolicy?.Name || "unless-stopped",
-    configuredImage: config.Image || IMAGE_NAME,
-  };
 }
 
 function isImmutableImageReference(imageReference: string | null | undefined): boolean {
@@ -137,62 +90,6 @@ async function getContainerImageReference(containerName: string): Promise<string
   }
 }
 
-async function getContainerSnapshot(): Promise<ContainerSnapshot> {
-  const config = await getContainerConfig();
-  const currentImageReference = await getContainerImageReference(CONTAINER_NAME);
-  const immutableImageReference = isImmutableImageReference(currentImageReference)
-    ? currentImageReference
-    : isImmutableImageReference(config.configuredImage)
-      ? config.configuredImage
-      : await getImageReference(config.configuredImage);
-
-  return {
-    config,
-    currentImageReference,
-    immutableImageReference: isImmutableImageReference(immutableImageReference)
-      ? immutableImageReference
-      : null,
-  };
-}
-
-function buildRunArgs(cfg: ContainerConfig, imageTag: string): string[] {
-  const args = [
-    "run", "-d", "--name", CONTAINER_NAME,
-    "--restart", cfg.restartPolicy || "unless-stopped",
-  ];
-
-  for (const env of cfg.env) { args.push("-e", env); }
-  for (const vol of cfg.volumes) { args.push("-v", vol); }
-  for (const port of cfg.ports) { args.push("-p", port); }
-  for (const net of cfg.networks) { args.push("--network", net); }
-
-  args.push(
-    "--health-cmd", "wget --no-verbose --tries=1 -O /dev/null http://localhost:8317/",
-    "--health-interval", "30s",
-    "--health-timeout", "10s",
-    "--health-retries", "3",
-    "--health-start-period", "20s"
-  );
-
-  args.push(imageTag);
-  return args;
-}
-
-async function removeContainerIfExists() {
-  try {
-    await execFileAsync("docker", ["rm", "-f", CONTAINER_NAME]);
-  } catch (error) {
-    const errorText = getCommandErrorText(error);
-    if (!errorText.includes("No such container")) {
-      throw error;
-    }
-  }
-}
-
-async function recreateWithDockerRun(config: ContainerConfig, imageTag: string) {
-  await removeContainerIfExists();
-  await execFileAsync("docker", buildRunArgs(config, imageTag));
-}
 
 async function startContainerIfExists() {
   try {
@@ -212,7 +109,93 @@ async function startContainerIfExists() {
 }
 
 async function runCompose(args: string[]) {
-  return execFileAsync("docker", ["compose", "-f", COMPOSE_FILE, ...args]);
+  return execFileAsync("docker", [
+    "compose",
+    "--env-file",
+    COMPOSE_ENV_FILE,
+    "-f",
+    COMPOSE_FILE,
+    ...args,
+  ]);
+}
+
+async function readComposeEnvFile() {
+  return readFile(COMPOSE_ENV_FILE, "utf8");
+}
+
+async function validateComposeRuntimeFiles() {
+  try {
+    await access(COMPOSE_FILE);
+  } catch {
+    throw new ComposeCompatibilityError(
+      `Update compose rollout requires mounted compose file at ${COMPOSE_FILE}`
+    );
+  }
+
+  try {
+    await access(COMPOSE_ENV_FILE);
+  } catch {
+    throw new ComposeCompatibilityError(
+      `Update compose rollout requires mounted compose env file at ${COMPOSE_ENV_FILE}`
+    );
+  }
+}
+
+function parseEnvFile(envContent: string) {
+  const values = new Map<string, string>();
+
+  for (const rawLine of envContent.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = normalizeEnvValue(line.slice(separatorIndex + 1).trim());
+    values.set(key, value);
+  }
+
+  return values;
+}
+
+function normalizeEnvValue(value: string) {
+  if (value.length >= 2) {
+    const firstChar = value[0];
+    const lastChar = value[value.length - 1];
+    if ((firstChar === '"' || firstChar === "'") && firstChar === lastChar) {
+      return value.slice(1, -1);
+    }
+  }
+
+  return value;
+}
+
+async function validateComposeEnvForProxyRollout() {
+  await validateComposeRuntimeFiles();
+  const envFileContents = await readComposeEnvFile();
+  const envValues = parseEnvFile(envFileContents);
+  const dbMode = envValues.get("DB_MODE") || "docker";
+
+  if (dbMode !== "docker" && dbMode !== "external") {
+    throw new Error(`Unsupported DB_MODE '${dbMode}' in compose env file`);
+  }
+
+  for (const key of ENV_FILE_REQUIRED_VARS) {
+    if (!envValues.get(key)) {
+      throw new Error(`Compose env file is missing required ${key}`);
+    }
+  }
+
+  if (dbMode === "docker" && !envValues.get("POSTGRES_PASSWORD")) {
+    throw new Error("Compose env file is missing required POSTGRES_PASSWORD for DB_MODE=docker");
+  }
+
+  return { dbMode };
 }
 
 async function isComposeAvailable() {
@@ -226,9 +209,9 @@ async function isComposeAvailable() {
       errorText.includes("unknown shorthand flag: 'f' in -f");
 
     if (composeMissing) {
-      logger.info("Docker compose not available in runtime, using docker run fallback");
+      logger.info("Docker compose not available in runtime; update fallback is disabled");
     } else {
-      logger.warn({ err: error }, "Compose availability check failed, using fallback");
+      logger.warn({ err: error }, "Compose availability check failed; update fallback is disabled");
     }
 
     return false;
@@ -254,15 +237,12 @@ export async function POST(request: NextRequest) {
   const originError = validateOrigin(request);
   if (originError) return originError;
 
-  let containerSnapshot: ContainerSnapshot | null = null;
   let composeAvailable = false;
   let useComposeRollout = false;
-  let recoveryImageReference: string | null = null;
   let previousComposeLatestRef: string | null = null;
   let retaggedComposeLatest = false;
   let shouldRestoreComposeLatest = false;
   let version: string | null = null;
-  let nonComposeFallbackBecameDestructive = false;
 
   try {
     const body = await request.json();
@@ -277,30 +257,34 @@ export async function POST(request: NextRequest) {
     const imageTag = `${IMAGE_NAME}:${version}`;
     composeAvailable = await isComposeAvailable();
 
-    if (composeAvailable) {
-      previousComposeLatestRef = await getContainerImageReference(CONTAINER_NAME);
+    if (!composeAvailable) {
+      throw new Error(
+        "Docker compose is not available in the runtime; refusing unsafe docker run update fallback"
+      );
+    }
 
-      if (!isImmutableImageReference(previousComposeLatestRef)) {
-        previousComposeLatestRef = null;
-      }
+    await validateComposeEnvForProxyRollout();
 
-      if (!previousComposeLatestRef && version !== "latest") {
-        const composeLatestImageReference = await getImageReference(`${IMAGE_NAME}:latest`);
-        previousComposeLatestRef = isImmutableImageReference(composeLatestImageReference)
-          ? composeLatestImageReference
-          : null;
-      }
+    previousComposeLatestRef = await getContainerImageReference(CONTAINER_NAME);
 
-      shouldRestoreComposeLatest = Boolean(previousComposeLatestRef);
-      useComposeRollout = version === "latest" || shouldRestoreComposeLatest;
+    if (!isImmutableImageReference(previousComposeLatestRef)) {
+      previousComposeLatestRef = null;
+    }
 
-      if (!useComposeRollout) {
-        containerSnapshot = await getContainerSnapshot();
-        recoveryImageReference = containerSnapshot.immutableImageReference;
-      }
-    } else {
-      containerSnapshot = await getContainerSnapshot();
-      recoveryImageReference = containerSnapshot.immutableImageReference;
+    if (!previousComposeLatestRef && version !== "latest") {
+      const composeLatestImageReference = await getImageReference(`${IMAGE_NAME}:latest`);
+      previousComposeLatestRef = isImmutableImageReference(composeLatestImageReference)
+        ? composeLatestImageReference
+        : null;
+    }
+
+    shouldRestoreComposeLatest = Boolean(previousComposeLatestRef);
+    useComposeRollout = version === "latest" || shouldRestoreComposeLatest;
+
+    if (!useComposeRollout) {
+      throw new Error(
+        `Cannot safely roll out ${version} without an immutable previous latest image reference`
+      );
     }
 
     const pullResult = await execFileAsync("docker", ["pull", imageTag]);
@@ -314,13 +298,6 @@ export async function POST(request: NextRequest) {
 
     if (useComposeRollout) {
       await runCompose(["up", "-d", "--no-deps", "--force-recreate", CONTAINER_NAME]);
-    } else {
-      if (!containerSnapshot) {
-        throw new Error("Missing container configuration for docker run fallback");
-      }
-
-       nonComposeFallbackBecameDestructive = true;
-      await recreateWithDockerRun(containerSnapshot.config, imageTag);
     }
 
     return apiSuccess({ message: `Updated to ${version}`, version });
@@ -364,7 +341,7 @@ export async function POST(request: NextRequest) {
             logger.info("Recovery: restarted existing proxy container");
           }
         }
-      } else if ((!composeAvailable || !useComposeRollout) && !nonComposeFallbackBecameDestructive) {
+      } else if (!composeAvailable || !useComposeRollout) {
         const started = await startContainerIfExists();
         if (started) {
           logger.info("Recovery: ensured existing proxy container is still running");
@@ -373,19 +350,13 @@ export async function POST(request: NextRequest) {
             "Recovery: existing proxy container was untouched but could not be restarted because it no longer exists"
           );
         }
-      } else if (containerSnapshot && recoveryImageReference) {
-        await recreateWithDockerRun(containerSnapshot.config, recoveryImageReference);
-        logger.info(
-          { recoveryImageReference },
-          "Recovery: recreated proxy container with previous immutable image"
-        );
-      } else if (!composeAvailable || !useComposeRollout) {
-        logger.warn(
-          "Recovery: no immutable previous image reference available; skipping docker run recreation"
-        );
       }
     } catch (restartError) {
       logger.error({ err: restartError }, "Recovery failed");
+    }
+
+    if (error instanceof ComposeCompatibilityError) {
+      return apiError(ERROR_CODE.CONFIG_ERROR, error.message, 500);
     }
 
     return Errors.internal("Update failed", error);

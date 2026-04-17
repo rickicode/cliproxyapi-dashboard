@@ -1,9 +1,6 @@
 - id: deploy-dashboard
   execute-command: /opt/cliproxyapi-dashboard/infrastructure/deploy.sh
-  command-working-directory: /opt/cliproxyapi-dashboard/infrastructure
-  pass-arguments-to-command:
-    - source: payload
-      name: no_cache
+  command-working-directory: /opt/cliproxyapi-dashboard
   trigger-rule:
     and:
       - match:
@@ -15,7 +12,7 @@
 
 - id: deploy-dashboard-nocache
   execute-command: /opt/cliproxyapi-dashboard/infrastructure/deploy.sh
-  command-working-directory: /opt/cliproxyapi-dashboard/infrastructure
+  command-working-directory: /opt/cliproxyapi-dashboard
   pass-arguments-to-command:
     - source: string
       name: "--no-cache"

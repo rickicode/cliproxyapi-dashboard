@@ -3,12 +3,24 @@
 # Triggered by webhook from dashboard admin panel
 
 # Configuration
-REPO_DIR="/opt/cliproxyapi-dashboard"
-INFRA_DIR="/opt/cliproxyapi-dashboard/infrastructure"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+COMPOSE_FILE="$REPO_DIR/docker-compose.yml"
+ENV_FILE="$REPO_DIR/infrastructure/.env"
 LOG_DIR="/var/log/cliproxyapi"
 LOG_FILE="${LOG_DIR}/dashboard-deploy.log"
 STATUS_FILE="${LOG_DIR}/dashboard-deploy-status.json"
 LOCK_FILE="${LOG_DIR}/deploy.lock"
+
+compose() {
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
+if [ ! -f "$COMPOSE_FILE" ] || [ ! -f "$ENV_FILE" ]; then
+    echo "Deploy script could not locate the repository-root compose contract next to this checkout." >&2
+    echo "Expected files: $COMPOSE_FILE and $ENV_FILE" >&2
+    exit 1
+fi
 
 # Ensure log directory exists with proper permissions
 mkdir -p "$LOG_DIR"
@@ -16,9 +28,12 @@ chmod 755 "$LOG_DIR"
 
 # Parse arguments
 FOREGROUND=false
+NO_CACHE=false
 for arg in "$@"; do
     if [ "$arg" = "--foreground" ]; then
         FOREGROUND=true
+    elif [ "$arg" = "--no-cache" ]; then
+        NO_CACHE=true
     fi
 done
 
@@ -84,8 +99,13 @@ fi
 
 # Step 2: Build latest dashboard image
 update_status "build" "running" "Building latest dashboard image locally..."
-cd "$INFRA_DIR"
-if docker compose build dashboard >> "$LOG_FILE" 2>&1; then
+BUILD_ARGS=(build)
+if [ "$NO_CACHE" = true ]; then
+    BUILD_ARGS+=(--no-cache)
+fi
+BUILD_ARGS+=(dashboard)
+
+if compose "${BUILD_ARGS[@]}" >> "$LOG_FILE" 2>&1; then
     update_status "build" "completed" "Dashboard image build successful"
 else
     update_status "build" "failed" "Dashboard image build failed"
@@ -94,7 +114,7 @@ fi
 
 # Step 3: Ensure docker-proxy is running
 update_status "proxy" "running" "Ensuring Docker socket proxy is running..."
-if docker compose up -d docker-proxy >> "$LOG_FILE" 2>&1; then
+if compose up -d docker-proxy >> "$LOG_FILE" 2>&1; then
     update_status "proxy" "completed" "Docker socket proxy is running"
 else
     update_status "proxy" "failed" "Failed to start Docker socket proxy"
@@ -103,7 +123,7 @@ fi
 
 # Step 4: Deploy new dashboard container
 update_status "deploy" "running" "Starting new dashboard container..."
-if docker compose up -d --no-deps dashboard >> "$LOG_FILE" 2>&1; then
+if compose up -d --no-deps dashboard >> "$LOG_FILE" 2>&1; then
     update_status "deploy" "completed" "Container started successfully"
 else
     update_status "deploy" "failed" "Failed to start container"

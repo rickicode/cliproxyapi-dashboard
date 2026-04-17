@@ -2,10 +2,10 @@
 
 ## Overview
 
-CLIProxyAPI Dashboard is a Next.js 16/React 19 web control plane for CLIProxyAPIPlus, providing a modern UI to manage OAuth-based AI CLI proxies (Claude Code, Gemini CLI, Codex, etc.) without YAML editing. The monorepo contains three service boundaries:
+CLIProxyAPI Dashboard is a Next.js 16/React 19 web control plane for CLIProxyAPIPlus, providing a modern UI to manage OAuth-based AI CLI proxies (Claude Code, Gemini CLI, Codex, etc.) without YAML editing. The monorepo contains three service boundaries, with the production Docker Compose boundary rooted at the repository `docker-compose.yml`:
 
 - **`dashboard/`** — Primary Next.js application with API routes, Prisma ORM, authentication, and provider management
-- **`infrastructure/`** — Production Docker Compose stack with Caddy reverse proxy, PostgreSQL, and service orchestration
+- **`infrastructure/`** — Production support assets such as Caddy config and env templates used by the root production Compose stack
 - **`perplexity-sidecar/`** — Optional Python FastAPI microservice providing OpenAI-compatible access to Perplexity AI
 
 ## Architecture
@@ -23,12 +23,12 @@ cliproxyapi-dashboard/
 │   ├── messages/             # i18n translations (en.json, de.json)
 │   ├── prisma/               # Database schema and migrations
 │   └── tests/                # E2E tests (Playwright)
-├── infrastructure/           # Production Docker Compose stack
-│   ├── docker-compose.yml    # Full production stack
+├── docker-compose.yml        # Full production stack (source of truth)
+├── infrastructure/           # Production support assets
 │   └── config/               # Caddy, env templates
 ├── perplexity-sidecar/       # FastAPI OpenAI-compatible wrapper
 ├── docs/                     # Installation, configuration, troubleshooting
-├── docker-compose.local.yml  # Local development stack
+├── docker-compose.local.yml  # Local development stack only
 ├── setup-local.sh            # Local stack bootstrap
 └── install.sh                # Automated server installation
 ```
@@ -41,7 +41,7 @@ cliproxyapi-dashboard/
 | `cliproxyapi` | Core proxy service (CLIProxyAPIPlus) |
 | `postgres` | PostgreSQL database |
 | `docker-proxy` | Constrained Docker socket proxy |
-| `perplexity` | Optional Perplexity sidecar |
+| `perplexity-sidecar` | Optional Perplexity sidecar |
 
 ### Data Flow
 1. User requests → Caddy → Dashboard (Next.js)
@@ -105,12 +105,17 @@ cd dashboard
 
 ### Production Stack
 ```bash
-cd infrastructure
-docker compose up -d     # Start production stack
-docker compose down      # Stop stack
+docker compose --env-file infrastructure/.env -f docker-compose.yml up -d     # Start production stack from repo root
+docker compose --env-file infrastructure/.env -f docker-compose.yml down      # Stop stack from repo root
 ./rebuild.sh             # Update and rebuild
 ./rebuild.sh --dashboard-only  # Update dashboard only
 ```
+
+- Production Docker Compose source of truth: repository root `docker-compose.yml`
+- Direct production Compose invocations should use `--env-file infrastructure/.env -f docker-compose.yml` unless the same variables are already exported in the shell
+- Local-only Compose file: `docker-compose.local.yml`
+- Installer DB modes: bundled Docker-managed PostgreSQL or external/custom PostgreSQL
+- In external/custom PostgreSQL mode, the bundled `postgres` service remains inert and bundled backup/restore helpers are unsupported
 
 ## Code Conventions
 
@@ -200,7 +205,7 @@ const t = await getTranslations('namespace');
 | `dashboard/eslint.config.mjs` | ESLint flat config |
 | `dashboard/vitest.config.ts` | Vitest test config |
 | `dashboard/prisma/schema.prisma` | Database schema |
-| `infrastructure/docker-compose.yml` | Production stack definition |
+| `docker-compose.yml` | Production stack definition |
 
 ### Key Modules
 | File | Purpose |
@@ -270,7 +275,7 @@ describe('MyModule', () => {
 | Container/update actions | `app/api/containers/*`, `app/api/update/*` |
 | Local bootstrap issues | `setup-local.sh`, `dev-local.sh` |
 | Perplexity integration | `perplexity-sidecar/app.py`, `app/api/providers/perplexity-cookie/*` |
-| Production stack issues | `infrastructure/docker-compose.yml`, `infrastructure/config/*` |
+| Production stack issues | `docker-compose.yml`, `infrastructure/config/*` |
 | i18n translations | `messages/en.json`, `messages/de.json` |
 
 ## Runtime & Tooling

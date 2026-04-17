@@ -49,45 +49,45 @@ If you want newer dashboard code, update the repository checkout first (for exam
 
 ## Low-Level Docker Compose Commands
 
-Use the commands below for start/stop/log inspection or for manual troubleshooting. They are lower-level alternatives, not the recommended day-to-day update workflow.
+Use the commands below from the repository root for start/stop/log inspection or for manual troubleshooting. They are lower-level alternatives, not the recommended day-to-day update workflow. The root `docker-compose.yml` is the production source of truth; `docker-compose.local.yml` remains local-only. Unless you have already exported the same values in your shell, include `--env-file infrastructure/.env -f docker-compose.yml` for direct production Compose commands.
 
 ```bash
-cd infrastructure
-
 # Start services
-docker compose up -d
+docker compose --env-file infrastructure/.env -f docker-compose.yml up -d
 
 # Stop services
-docker compose down
+docker compose --env-file infrastructure/.env -f docker-compose.yml down
 
 # Restart services
-docker compose restart
+docker compose --env-file infrastructure/.env -f docker-compose.yml restart
 
 # View running containers
-docker compose ps
+docker compose --env-file infrastructure/.env -f docker-compose.yml ps
 
 # View logs (all services)
-docker compose logs -f
+docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f
 
 # View logs (specific service)
-docker compose logs -f caddy
-docker compose logs -f cliproxyapi
-docker compose logs -f dashboard
-docker compose logs -f postgres
-docker compose logs -f perplexity-sidecar
+docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f caddy
+docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f cliproxyapi
+docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f dashboard
+docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f postgres
+docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f perplexity-sidecar
 
 # Execute command in container
-docker compose exec cliproxyapi sh
-docker compose exec dashboard sh
-docker compose exec postgres psql -U cliproxyapi -d cliproxyapi
+docker compose --env-file infrastructure/.env -f docker-compose.yml exec cliproxyapi sh
+docker compose --env-file infrastructure/.env -f docker-compose.yml exec dashboard sh
+docker compose --env-file infrastructure/.env -f docker-compose.yml exec postgres psql -U cliproxyapi -d cliproxyapi
 
 # Manually pull remote images for non-build troubleshooting
-docker compose pull
+docker compose --env-file infrastructure/.env -f docker-compose.yml pull
 
 # Recreate services manually after a targeted compose change
-docker compose up -d
+docker compose --env-file infrastructure/.env -f docker-compose.yml up -d
 ```
 
 If you use `docker compose down` directly, treat it as a continuity-breaking operation because it stops `cliproxyapi`, `postgres`, and the rest of the stack together.
+
+If the host was installed in **external/custom PostgreSQL** mode, the bundled `postgres` service should remain inert. Use these Compose commands for the rest of the production stack, but perform database backups/restores through your external PostgreSQL tooling rather than through bundled helpers.
 
 ![Docker Commands](code-snippets/docker-commands.png)
