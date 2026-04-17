@@ -1,59 +1,94 @@
-# Local setup for macOS / Windows (Docker Desktop)
-# No Caddy, no TLS, no systemd — everything on localhost
+# CLIProxyAPI + Dashboard Docker Compose Stack
+# Production source of truth.
+# Environment contract:
+# - Production values normally live in ./infrastructure/.env.
+# - When invoking this root file directly, prefer:
+#   docker compose --env-file infrastructure/.env -f docker-compose.yml ...
+# - The legacy infrastructure/docker-compose.yml wrapper forwards to this file and keeps using
+#   infrastructure/.env for callers that still start from that location.
+# - Critical production secrets are required here on purpose so the source-of-truth file fails
+#   fast instead of silently accepting blank credentials.
 # Lifecycle intent:
-# - `docker compose up -d` establishes the local stack.
-# - `restart: unless-stopped` keeps containers available across Docker Desktop restarts unless you
-#   intentionally stop them.
-# - Unlike the production installer path, this file does not install a host-level boot service.
-# Usage: docker compose -f docker-compose.yml up -d
+# - Services use `restart: unless-stopped` so Docker brings them back after daemon/host restarts
+#   unless an operator explicitly stopped them.
+# - Installer/runtime boot orchestration lives outside this file.
+# Network Architecture:
+# - frontend: Public network (Caddy <-> Dashboard, Caddy <-> CLIProxyAPI)
+# - backend: Internal network (CLIProxyAPI <-> Postgres, Dashboard <-> Postgres)
 
 services:
   postgres:
     image: postgres:16-alpine
     container_name: cliproxyapi-postgres
     restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
+    mem_reservation: 64m
     networks:
       - backend
     environment:
+      DB_MODE: ${DB_MODE:-docker}
       POSTGRES_DB: cliproxyapi
       POSTGRES_USER: cliproxyapi
-      # NOTE: Only used on first run (volume creation). Changing this later won't update the DB password.
-      # To reset: docker compose -f docker-compose.yml down -v
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # NOTE: Only used on first run (volume creation) when DB_MODE=docker. Changing this later
+      # won't update the DB password. To reset: docker compose down -v (destroys all data).
+      # External/custom database mode keeps this service parse-safe with a benign placeholder, but
+      # runtime startup stays inert and dashboard connectivity still comes from DATABASE_URL.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-external-mode-unused}
+      TZ: ${TZ:-}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ "$${DB_MODE:-docker}" = "external" ]; then
+          echo "DB_MODE=external: compose-managed postgres disabled"
+          trap 'exit 0' TERM INT
+          while :; do sleep 3600; done
+        fi
+        exec docker-entrypoint.sh postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cliproxyapi -d cliproxyapi"]
+      test:
+        [
+          "CMD-SHELL",
+          "if [ \"$${DB_MODE:-docker}\" = \"external\" ]; then exit 0; else pg_isready -U cliproxyapi -d cliproxyapi; fi",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
 
-  # Requires ./config.local.yaml mounted below with `port: 8317` for management/OAuth
+  # CLIProxyAPI Service — requires ./infrastructure/config/config.yaml with `port: 8317`
+  # Port exposure contract:
+  # - 127.0.0.1:8317 stays loopback-only because Caddy fronts the main API/UI path.
+  # - The callback ports below remain host-exposed intentionally; OAuth/device-login flows from
+  #   external provider pages must be able to reach the host directly on these fixed ports.
   cliproxyapi:
     image: eceasy/cli-proxy-api-plus:latest
     container_name: cliproxyapi
     restart: unless-stopped
+    cpus: 1.0
+    mem_limit: 256m
+    mem_reservation: 64m
     networks:
       - frontend
       - backend
     environment:
-      MANAGEMENT_PASSWORD: ${MANAGEMENT_API_KEY}
+      MANAGEMENT_PASSWORD: ${MANAGEMENT_API_KEY:?Set MANAGEMENT_API_KEY for CLIProxyAPI management access}
       DEPLOY: production
+      TZ: ${TZ:-}
     ports:
       - "127.0.0.1:8317:8317"
-      - "127.0.0.1:8085:8085"
-      - "127.0.0.1:1455:1455"
-      - "127.0.0.1:54545:54545"
-      - "127.0.0.1:51121:51121"
-      - "127.0.0.1:11451:11451"
+      - "8085:8085"
+      - "1455:1455"
+      - "54545:54545"
+      - "51121:51121"
+      - "11451:11451"
     volumes:
-      - ./config.local.yaml:/CLIProxyAPI/config.yaml
+      - ./infrastructure/config/config.yaml:/CLIProxyAPI/config.yaml
       - cliproxyapi_auths:/root/.cli-proxy-api
       - cliproxyapi_logs:/CLIProxyAPI/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:8317/"]
       interval: 30s
@@ -61,17 +96,23 @@ services:
       retries: 3
       start_period: 20s
 
+  # Docker Socket Proxy — restricts dashboard Docker access to safe operations only
   docker-proxy:
     image: tecnativa/docker-socket-proxy:latest
     container_name: cliproxyapi-docker-proxy
     restart: unless-stopped
+    cpus: 0.25
+    mem_limit: 128m
+    mem_reservation: 32m
     networks:
       - backend
     environment:
       CONTAINERS: 1
       IMAGES: 1
       POST: 1
-      NETWORKS: 0
+      # Required in production because dashboard-driven update/recreate flows may need to inspect
+      # and reattach containers to the existing frontend/backend networks.
+      NETWORKS: 1
       VOLUMES: 0
       EXEC: 0
       SERVICES: 0
@@ -93,24 +134,28 @@ services:
       retries: 3
       start_period: 5s
 
-  # Perplexity Pro Sidecar — only starts when COMPOSE_PROFILES includes "perplexity"
-  # Enable via: ./setup-local.sh (answer 'y' to Perplexity prompt)
+  # Perplexity Pro Sidecar — OpenAI-compatible wrapper for Perplexity Pro subscription
+  # Only starts when COMPOSE_PROFILES includes "perplexity"
   perplexity-sidecar:
     profiles: ["perplexity"]
     build: ./perplexity-sidecar
     container_name: cliproxyapi-perplexity-sidecar
     restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
+    mem_reservation: 64m
     networks:
       - frontend
       - backend
     environment:
       PERPLEXITY_COOKIES: ${PERPLEXITY_COOKIES:-}
       PERPLEXITY_SIDECAR_SECRET: ${PERPLEXITY_SIDECAR_SECRET:-}
-      MANAGEMENT_API_KEY: ${MANAGEMENT_API_KEY}
+      MANAGEMENT_API_KEY: ${MANAGEMENT_API_KEY:-}
       DASHBOARD_URL: http://dashboard:8318
       PORT: "8766"
       PERPLEXITY_SIDECAR_AUTO_UPDATE: ${PERPLEXITY_SIDECAR_AUTO_UPDATE:-true}
       UPDATE_CHECK_INTERVAL: ${UPDATE_CHECK_INTERVAL:-3600}
+      TZ: ${TZ:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8766/health"]
       interval: 15s
@@ -123,20 +168,27 @@ services:
       context: ./dashboard
     container_name: cliproxyapi-dashboard
     restart: unless-stopped
+    cpus: 1.0
+    mem_limit: 512m
+    mem_reservation: 128m
     networks:
       - frontend
       - backend
-    ports:
-      - "127.0.0.1:8318:8318"
     environment:
-      DATABASE_URL: postgresql://cliproxyapi:${POSTGRES_PASSWORD}@postgres:5432/cliproxyapi
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL for dashboard database access}
       CLIPROXYAPI_MANAGEMENT_URL: http://cliproxyapi:8317/v0/management
-      MANAGEMENT_API_KEY: ${MANAGEMENT_API_KEY}
-      JWT_SECRET: ${JWT_SECRET}
+      MANAGEMENT_API_KEY: ${MANAGEMENT_API_KEY:?Set MANAGEMENT_API_KEY for dashboard-to-CLIProxyAPI access}
+      COLLECTOR_API_KEY: ${COLLECTOR_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET for dashboard session signing}
       NODE_ENV: production
+      PORT: "8318"
+      API_URL: ${API_URL:-}
+      DASHBOARD_URL: ${DASHBOARD_URL:-}
       DOCKER_HOST: tcp://docker-proxy:2375
-      DASHBOARD_URL: http://localhost:8318
-      API_URL: http://localhost:8317
+      GITHUB_REPO: ${GITHUB_REPO:-itsmylife44/cliproxyapi-dashboard}
+    volumes:
+      - ./docker-compose.yml:/opt/cliproxyapi/docker-compose.yml:ro
+      - ./infrastructure:/opt/cliproxyapi/infrastructure:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -149,12 +201,48 @@ services:
       interval: 15s
       timeout: 10s
       retries: 3
-      start_period: 40s  # Allow time for DB init + Next.js startup
+      start_period: 40s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: cliproxyapi-caddy
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
+    mem_reservation: 64m
+    networks:
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./infrastructure/config/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      cliproxyapi:
+        condition: service_healthy
+      dashboard:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   postgres_data:
+    driver: local
   cliproxyapi_auths:
+    driver: local
   cliproxyapi_logs:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
 
 networks:
   frontend:
@@ -163,4 +251,4 @@ networks:
   backend:
     driver: bridge
     name: cliproxyapi_backend
-    internal: true  # Match production — no external internet access
+    internal: true

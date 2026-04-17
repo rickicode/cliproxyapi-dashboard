@@ -10,7 +10,7 @@ Before installing, ensure you have:
 
 **For server deployment:**
 
-- **Operating System**: Ubuntu 20.04+ or Debian 11+ (other Linux distributions should work with minor adjustments)
+- **Operating System**: Ubuntu 20.04+ or Debian 11+ are the installer's supported Linux targets. Other Linux distributions may work for manual setups, but `install.sh` does not treat them as supported paths.
 - **Root Access**: Required for Docker and firewall configuration
 - **Domain Name**: A registered domain with DNS control
 - **Server**: VPS or dedicated server with public IP address
@@ -57,14 +57,15 @@ sudo ./install.sh
 
 The installer will:
 1. Prompt for domain and subdomain configuration
-2. Install Docker and Docker Compose (if not already installed)
-3. Configure UFW firewall with required ports
-4. Generate secure secrets (JWT_SECRET, MANAGEMENT_API_KEY, POSTGRES_PASSWORD)
-5. Pull the pre-built dashboard image from GHCR
-6. Create `infrastructure/.env` with all required configuration
-7. Create a systemd service for automatic startup on boot
-8. Optionally set up automated daily or weekly backups
-9. Remove only the legacy installer-managed `/api/usage/collect` cron entry/comment because periodic usage collection is now handled internally by the dashboard app
+2. Prompt whether production data should live in the bundled Docker-managed PostgreSQL service or in an external/custom PostgreSQL instance (the bundled `postgres` container still remains present as an inert dependency placeholder in external DB mode)
+3. Install Docker and Docker Compose (if not already installed)
+4. Configure UFW firewall with required ports
+5. Generate secure secrets (JWT_SECRET, MANAGEMENT_API_KEY, and `POSTGRES_PASSWORD` when using the bundled PostgreSQL service)
+6. Create the production environment file at `infrastructure/.env` with all required configuration
+7. Prepare the repository-root Docker Compose stack contract from your local checkout (configuration, env file, and startup wiring)
+8. Create and enable a systemd service for startup on boot
+9. Optionally set up automated daily or weekly backups when using the bundled PostgreSQL service
+10. Remove only the legacy installer-managed `/api/usage/collect` cron entry/comment because periodic usage collection is now handled internally by the dashboard app
 
 After installation, use the recommended update path that matches your maintenance window:
 
@@ -76,13 +77,12 @@ After installation, use the recommended update path that matches your maintenanc
 
 ### Post-Installation
 
-After installation completes:
+After installation completes, start the service manually:
 
 ```bash
 sudo systemctl start cliproxyapi-stack
 sudo systemctl status cliproxyapi-stack
-cd infrastructure
-docker compose logs -f
+docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f
 ```
 
 For later updates, prefer `./rebuild.sh` for continuity-preserving maintenance and reserve `./rebuild.sh --full-recreate` for cases where you explicitly want a full stack restart. If you expect a newer dashboard release, update this repository first (for example with `git pull`) because `rebuild.sh` rebuilds the dashboard image from the local source tree; it does not fetch dashboard source from GHCR. The same script does not rebuild optional buildable services such as `perplexity-sidecar`.
@@ -204,7 +204,7 @@ sudo systemctl enable docker
 sudo systemctl start docker
 ```
 
-> **Note**: The automated installer (`install.sh`) detects your OS via `/etc/os-release` and uses the correct repository path automatically.
+> **Note**: The automated installer (`install.sh`) no longer manages distro-specific Docker APT repository paths itself. It installs or repairs Docker/Compose through `https://get.docker.com`, which handles the supported Ubuntu/Debian package setup for the installer.
 
 ### 2. Configure Firewall
 
@@ -236,28 +236,41 @@ sudo ufw enable
 # Generate secure secrets
 JWT_SECRET=$(openssl rand -base64 32)
 MANAGEMENT_API_KEY=$(openssl rand -hex 32)
-POSTGRES_PASSWORD=$(openssl rand -hex 32)
 
 # Display secrets (save these values)
 echo "JWT_SECRET=$JWT_SECRET"
 echo "MANAGEMENT_API_KEY=$MANAGEMENT_API_KEY"
+```
+
+If you are using the bundled Docker-managed PostgreSQL service, also generate and save:
+
+```bash
+POSTGRES_PASSWORD=$(openssl rand -hex 32)
 echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
 ```
 
 ### 4. Create Environment File
+
+Choose the example that matches your database mode.
+
+#### Docker-managed PostgreSQL example
 
 ```bash
 cat > infrastructure/.env << EOF
 DOMAIN=example.com
 DASHBOARD_SUBDOMAIN=dashboard
 API_SUBDOMAIN=api
+DB_MODE=docker
 DATABASE_URL=postgresql://cliproxyapi:${POSTGRES_PASSWORD}@postgres:5432/cliproxyapi
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 JWT_SECRET=${JWT_SECRET}
 MANAGEMENT_API_KEY=${MANAGEMENT_API_KEY}
+COLLECTOR_API_KEY=$(openssl rand -hex 32)
+PROVIDER_ENCRYPTION_KEY=$(openssl rand -hex 32)
 CLIPROXYAPI_MANAGEMENT_URL=http://cliproxyapi:8317/v0/management
 INSTALL_DIR=$(pwd)
 TZ=UTC
+LOG_LEVEL=info
 DASHBOARD_URL=https://dashboard.example.com
 API_URL=https://api.example.com
 EOF
@@ -270,7 +283,50 @@ chmod 600 infrastructure/.env
 
 Replace `example.com` with your actual domain.
 
-> **Critical**: The `infrastructure/.env` file is generated by `install.sh` and must contain all variables shown above. An empty or missing `.env` file will cause the stack to fail on startup. Do not commit this file to version control.
+#### External/custom PostgreSQL example
+
+```bash
+EXTERNAL_DATABASE_URL='postgresql://dbuser:dbpass@db.example.net:5432/cliproxyapi'
+
+cat > infrastructure/.env << EOF
+DOMAIN=example.com
+DASHBOARD_SUBDOMAIN=dashboard
+API_SUBDOMAIN=api
+DB_MODE=external
+DATABASE_URL=${EXTERNAL_DATABASE_URL}
+JWT_SECRET=${JWT_SECRET}
+MANAGEMENT_API_KEY=${MANAGEMENT_API_KEY}
+COLLECTOR_API_KEY=$(openssl rand -hex 32)
+PROVIDER_ENCRYPTION_KEY=$(openssl rand -hex 32)
+CLIPROXYAPI_MANAGEMENT_URL=http://cliproxyapi:8317/v0/management
+INSTALL_DIR=$(pwd)
+TZ=UTC
+LOG_LEVEL=info
+DASHBOARD_URL=https://dashboard.example.com
+API_URL=https://api.example.com
+EOF
+
+chmod 600 infrastructure/.env
+```
+
+> **Critical**: The `infrastructure/.env` file is generated by `install.sh` and must include the variables required for your chosen database mode. An empty or missing `.env` file will cause the stack to fail on startup. Do not commit this file to version control.
+
+> **Compose boundary**: Production Docker Compose operations now use the repository root `docker-compose.yml` as the source of truth. `docker-compose.local.yml` remains local-development-only. Any installer-managed `docker-compose.override.yml` is written at the repository root beside `docker-compose.yml` so root/systemd invocations load it automatically.
+
+> **Root override note**: In external proxy mode and webhook mode, the installer writes runtime overrides to the repository-root `docker-compose.override.yml` only when it can create that file itself. If a root override already exists, the installer leaves it unchanged and prints the exact `dashboard` snippet you must merge manually (for example `ports` for external proxy mode or `extra_hosts` for webhook mode).
+
+### 4a. Choose a Database Mode
+
+Production installs support two database modes:
+
+- **Docker-managed PostgreSQL**: the default bundled `postgres` service inside the production Compose stack. This is the simplest option and keeps installer-managed backup/restore helpers available.
+- **External/custom PostgreSQL**: use your own managed database service or an existing PostgreSQL server. In this mode, the bundled `postgres` service still starts as an inert placeholder because the production Compose runtime keeps the dashboard's `depends_on` contract intact, and installer-managed backup/restore helpers are not supported.
+
+When using an external/custom database:
+
+- Set `DATABASE_URL` to your external PostgreSQL connection string.
+- Expect the bundled `postgres` container to remain present but inert; do not expect it to hold production data.
+- Manage backups, restore, HA, and credential rotation through your external database platform or your own operational tooling.
 
 ### 5. Configure CLIProxyAPIPlus
 
@@ -281,6 +337,13 @@ Periodic usage collection does not require the old installer-managed cron setup.
 If you need to onboard many Codex accounts at once, the Dashboard `Providers` page supports bulk JSON import for Codex OAuth credentials. The input format is a JSON array where each item contains an `email` plus the credential payload fields such as `access_token` and `refresh_token`. See [CONFIGURATION.md](./CONFIGURATION.md#codex-bulk-import) for the exact format.
 
 ### 6. Create Systemd Service
+
+The installer writes this unit dynamically so the explicit service list matches your selected reverse-proxy/profile modes while preserving the current production Compose dependency contract:
+
+- integrated Caddy vs external reverse proxy
+- optional `perplexity-sidecar` profile enablement
+
+The manual example below reflects the default integrated-Caddy path. The `postgres` service remains in the explicit startup list even for external/custom PostgreSQL installs so the bundled container stays available as the inert dependency placeholder expected by the current runtime model.
 
 ```bash
 sudo tee /etc/systemd/system/cliproxyapi-stack.service > /dev/null << 'EOF'
@@ -293,9 +356,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=true
-WorkingDirectory=/opt/cliproxyapi/infrastructure
-ExecStart=/usr/bin/docker compose up -d --wait
-ExecStop=/usr/bin/docker compose down
+WorkingDirectory=/opt/cliproxyapi
+ExecStart=/usr/bin/docker compose --env-file /opt/cliproxyapi/infrastructure/.env -f /opt/cliproxyapi/docker-compose.yml up -d --wait postgres caddy docker-proxy cliproxyapi dashboard
+ExecStop=/usr/bin/docker compose --env-file /opt/cliproxyapi/infrastructure/.env -f /opt/cliproxyapi/docker-compose.yml down
 TimeoutStartSec=300
 TimeoutStopSec=120
 Restart=on-failure
@@ -307,8 +370,9 @@ Group=root
 WantedBy=multi-user.target
 EOF
 
-# Update WorkingDirectory to match your installation path
-sudo sed -i 's|/opt/cliproxyapi|'$(pwd)'|g' \
+# Update the install path in the unit file to match your checkout location
+INSTALL_DIR="$(pwd)"
+sudo sed -i "s|/opt/cliproxyapi|${INSTALL_DIR}|g" \
   /etc/systemd/system/cliproxyapi-stack.service
 
 # Reload systemd and enable service
@@ -316,17 +380,31 @@ sudo systemctl daemon-reload
 sudo systemctl enable cliproxyapi-stack
 ```
 
+This matches the installer's production contract: the stack is started from the repository root, reads variables from `infrastructure/.env`, and automatically picks up any root-level `docker-compose.override.yml` written by the installer.
+
+If you use an external/custom PostgreSQL server, keep `postgres` in `ExecStart`; it remains an inert placeholder container and should not hold production data. If you use an external reverse proxy, remove `caddy`. If you enable the Perplexity sidecar profile, add `perplexity-sidecar` to the explicit `ExecStart` service list because profiled services are not auto-started when Compose is invoked with explicit service names.
+
 ### 7. Start the Stack
 
 ```bash
 sudo systemctl start cliproxyapi-stack
 ```
 
-Or manually:
+Or manually from the repository root, using the service list that matches your reverse-proxy mode:
+
+**Integrated Caddy**
 ```bash
-cd infrastructure
-docker compose up -d --wait
+docker compose --env-file infrastructure/.env -f docker-compose.yml up -d --wait postgres caddy docker-proxy cliproxyapi dashboard
 ```
+
+**External reverse proxy**
+```bash
+docker compose --env-file infrastructure/.env -f docker-compose.yml up -d --wait postgres docker-proxy cliproxyapi dashboard
+```
+
+In external/custom PostgreSQL mode, keep `postgres` in those commands as well. The bundled container remains present only as an inert placeholder because the current production runtime still starts it alongside `dashboard`.
+
+Add `perplexity-sidecar` to the explicit service list when you intentionally enable that profile. This keeps the manual command aligned with the installer's mode-aware systemd unit generation.
 
 For ongoing maintenance from the repository root, prefer the `rebuild.sh` flows above instead of ad-hoc compose update commands:
 
@@ -339,3 +417,13 @@ For ongoing maintenance from the repository root, prefer the `rebuild.sh` flows 
 Use `--full-recreate` only when you are prepared for a complete service interruption.
 
 If you intentionally need low-level/manual Compose operations, use them for troubleshooting or specialized cases rather than as the normal update path. In particular, `rebuild.sh` is the documented update workflow because it keeps the pull scope aligned with the repository's local-build behavior.
+
+When you do use direct production Compose commands from the repository root, include the production env-file contract explicitly unless you have already exported the same variables in your shell:
+
+```bash
+docker compose --env-file infrastructure/.env -f docker-compose.yml ps
+docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f
+docker compose --env-file infrastructure/.env -f docker-compose.yml down
+```
+
+If you instead operate from `infrastructure/`, the legacy wrapper there forwards to the repository-root production Compose file while keeping `infrastructure/.env` as the active env file.

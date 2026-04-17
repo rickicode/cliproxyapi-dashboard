@@ -4,7 +4,13 @@
 
 set -e
 
-cd "$(dirname "$0")/infrastructure"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
+ENV_FILE="$SCRIPT_DIR/infrastructure/.env"
+
+compose() {
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
 
 MODE="rolling"
 
@@ -53,11 +59,11 @@ if [ "$MODE" = "dashboard-only" ]; then
     echo ""
 
     echo "[1/2] Building dashboard image..."
-    docker compose build dashboard
+    compose build dashboard
 
     echo ""
     echo "[2/2] Recreating dashboard container and waiting for compose readiness..."
-    docker compose up -d --wait --no-deps dashboard
+    compose up -d --wait --no-deps dashboard
 else
     if [ "$MODE" = "full-recreate" ]; then
         echo "Mode: full-recreate"
@@ -74,31 +80,31 @@ else
     echo ""
 
     echo "[1/3] Pulling latest images for non-build services..."
-    docker compose pull --ignore-buildable
+    compose pull --ignore-buildable
 
     echo ""
     echo "[2/3] Building dashboard image..."
-    docker compose build dashboard
+    compose build dashboard
 
     echo ""
     if [ "$MODE" = "full-recreate" ]; then
         echo "[3/3] Stopping and removing old containers before fresh start..."
-        docker compose down
+        compose down
 
         echo ""
         echo "Starting fresh containers and waiting for compose readiness..."
-        docker compose up -d --wait
+        compose up -d --wait
     else
         echo "[3/3] Applying updates without tearing down the full stack and waiting for compose readiness..."
-        docker compose up -d --wait
+        compose up -d --wait
     fi
 fi
 
 echo ""
 echo "Verifying container status..."
-docker compose ps
+compose ps
 
 echo ""
 echo "=== Update complete ==="
 echo ""
-echo "View logs: cd infrastructure && docker compose logs -f"
+echo "View logs: docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f"

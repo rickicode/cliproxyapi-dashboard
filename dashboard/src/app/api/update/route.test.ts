@@ -4,6 +4,8 @@ import { promisify } from "util";
 
 vi.mock("server-only", () => ({}));
 
+const accessMock = vi.fn();
+const readFileMock = vi.fn();
 const verifySessionMock = vi.fn();
 const validateOriginMock = vi.fn();
 const findUniqueMock = vi.fn();
@@ -36,6 +38,19 @@ vi.mock("child_process", () => ({
   execFile: execFileMock,
 }));
 
+vi.mock("fs/promises", () => ({
+  access: accessMock,
+  readFile: readFileMock,
+}));
+
+const defaultComposeEnv = [
+  "DB_MODE=docker",
+  "POSTGRES_PASSWORD=postgres-secret",
+  "DATABASE_URL=postgresql://cliproxyapi:postgres-secret@postgres:5432/cliproxyapi",
+  "MANAGEMENT_API_KEY=test-management-key",
+  "JWT_SECRET=test-jwt-secret",
+].join("\n");
+
 describe("POST /api/update", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -44,9 +59,13 @@ describe("POST /api/update", () => {
     findUniqueMock.mockReset();
     execFileAsyncMock.mockReset();
     execFileMock.mockClear();
+    accessMock.mockReset();
+    readFileMock.mockReset();
     verifySessionMock.mockResolvedValue({ userId: "user-1" });
     validateOriginMock.mockReturnValue(null);
     findUniqueMock.mockResolvedValue({ isAdmin: true });
+    accessMock.mockResolvedValue(undefined);
+    readFileMock.mockResolvedValue(defaultComposeEnv);
   });
 
   it("prefers the compose recreate path when compose is available without requiring a container snapshot", async () => {
@@ -86,8 +105,10 @@ describe("POST /api/update", () => {
       "docker",
       [
         "compose",
+        "--env-file",
+        "/opt/cliproxyapi/infrastructure/.env",
         "-f",
-        "/opt/cliproxyapi/infrastructure/docker-compose.yml",
+        "/opt/cliproxyapi/docker-compose.yml",
         "up",
         "-d",
         "--no-deps",
@@ -96,6 +117,7 @@ describe("POST /api/update", () => {
       ],
     );
     expect(execFileAsyncMock).toHaveBeenCalledTimes(4);
+    expect(readFileMock).toHaveBeenCalledWith("/opt/cliproxyapi/infrastructure/.env", "utf8");
     expect(execFileAsyncMock).not.toHaveBeenCalledWith(
       "docker",
       expect.arrayContaining(["run", "-d", "--name", "cliproxyapi"]),
@@ -136,8 +158,10 @@ describe("POST /api/update", () => {
       "docker",
       [
         "compose",
+        "--env-file",
+        "/opt/cliproxyapi/infrastructure/.env",
         "-f",
-        "/opt/cliproxyapi/infrastructure/docker-compose.yml",
+        "/opt/cliproxyapi/docker-compose.yml",
         "up",
         "-d",
         "--no-deps",
@@ -155,8 +179,10 @@ describe("POST /api/update", () => {
       "docker",
       [
         "compose",
+        "--env-file",
+        "/opt/cliproxyapi/infrastructure/.env",
         "-f",
-        "/opt/cliproxyapi/infrastructure/docker-compose.yml",
+        "/opt/cliproxyapi/docker-compose.yml",
         "up",
         "-d",
         "--no-deps",
@@ -213,8 +239,10 @@ describe("POST /api/update", () => {
       "docker",
       [
         "compose",
+        "--env-file",
+        "/opt/cliproxyapi/infrastructure/.env",
         "-f",
-        "/opt/cliproxyapi/infrastructure/docker-compose.yml",
+        "/opt/cliproxyapi/docker-compose.yml",
         "up",
         "-d",
         "--no-deps",
@@ -225,17 +253,12 @@ describe("POST /api/update", () => {
     expect(response.status).toBe(500);
   });
 
-  it("falls back without retagging latest for versioned updates when no immutable compose latest reference exists", async () => {
+  it("refuses versioned compose rollouts when no immutable latest reference exists and only restarts the container", async () => {
     execFileAsyncMock
       .mockResolvedValueOnce({ stdout: "compose-ok", stderr: "" })
       .mockResolvedValueOnce({ stdout: '[{"Config":{"Image":"eceasy/cli-proxy-api-plus:latest"}}]', stderr: "" })
       .mockResolvedValueOnce({ stdout: '{"RepoTags":["eceasy/cli-proxy-api-plus:latest"]}', stderr: "" })
-      .mockResolvedValueOnce({ stdout: '[{"Config":{"Image":"eceasy/cli-proxy-api-plus:latest","Env":["A=1"]},"HostConfig":{"Binds":["/tmp:/tmp"],"PortBindings":{},"RestartPolicy":{"Name":"unless-stopped"}},"NetworkSettings":{"Networks":{}}}]', stderr: "" })
-      .mockResolvedValueOnce({ stdout: '[{"Config":{"Image":"eceasy/cli-proxy-api-plus:latest"}}]', stderr: "" })
-      .mockResolvedValueOnce({ stdout: '{"RepoTags":["eceasy/cli-proxy-api-plus:latest"]}', stderr: "" })
-      .mockResolvedValueOnce({ stdout: "pull-ok", stderr: "" })
-      .mockResolvedValueOnce({ stdout: "removed", stderr: "" })
-      .mockResolvedValueOnce({ stdout: "recreated", stderr: "" });
+      .mockResolvedValueOnce({ stdout: "started", stderr: "" });
 
     const { POST } = await import("./route");
     const response = await POST(
@@ -254,33 +277,26 @@ describe("POST /api/update", () => {
       "--format",
       "{{json .}}",
     ]);
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(4, "docker", ["inspect", "cliproxyapi"]);
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(5, "docker", ["inspect", "cliproxyapi"]);
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(6, "docker", [
-      "image",
-      "inspect",
-      "eceasy/cli-proxy-api-plus:latest",
-      "--format",
-      "{{json .}}",
-    ]);
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(7, "docker", ["pull", "eceasy/cli-proxy-api-plus:v1.2.3"]);
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(8, "docker", ["rm", "-f", "cliproxyapi"]);
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(
-      9,
-      "docker",
-      expect.arrayContaining(["run", "-d", "--name", "cliproxyapi", "eceasy/cli-proxy-api-plus:v1.2.3"]),
-    );
+    expect(execFileAsyncMock).toHaveBeenNthCalledWith(4, "docker", ["start", "cliproxyapi"]);
     expect(execFileAsyncMock).not.toHaveBeenCalledWith("docker", [
       "tag",
       "eceasy/cli-proxy-api-plus:v1.2.3",
       "eceasy/cli-proxy-api-plus:latest",
     ]);
+    expect(execFileAsyncMock).not.toHaveBeenCalledWith("docker", ["pull", "eceasy/cli-proxy-api-plus:v1.2.3"]);
+    expect(execFileAsyncMock).not.toHaveBeenCalledWith("docker", ["rm", "-f", "cliproxyapi"]);
+    expect(execFileAsyncMock).not.toHaveBeenCalledWith(
+      "docker",
+      expect.arrayContaining(["run", "-d", "--name", "cliproxyapi"]),
+    );
     expect(execFileAsyncMock).not.toHaveBeenCalledWith(
       "docker",
       expect.arrayContaining([
         "compose",
+        "--env-file",
+        "/opt/cliproxyapi/infrastructure/.env",
         "-f",
-        "/opt/cliproxyapi/infrastructure/docker-compose.yml",
+        "/opt/cliproxyapi/docker-compose.yml",
         "up",
         "-d",
         "--no-deps",
@@ -288,7 +304,149 @@ describe("POST /api/update", () => {
         "cliproxyapi",
       ]),
     );
+    expect(response.status).toBe(500);
+  });
+
+  it("allows compose rollout validation in external DB mode without requiring POSTGRES_PASSWORD", async () => {
+    readFileMock.mockResolvedValue([
+      "DB_MODE=external",
+      "DATABASE_URL=postgresql://external-user:external-pass@db.example.com:5432/cliproxyapi",
+      "MANAGEMENT_API_KEY=test-management-key",
+      "JWT_SECRET=test-jwt-secret",
+    ].join("\n"));
+
+    execFileAsyncMock
+      .mockResolvedValueOnce({ stdout: "compose-ok", stderr: "" })
+      .mockResolvedValueOnce({ stdout: '[{"Image":"sha256:known-good","Config":{"Image":"eceasy/cli-proxy-api-plus:latest"}}]', stderr: "" })
+      .mockResolvedValueOnce({ stdout: "pull-ok", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "up-ok", stderr: "" });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new NextRequest("http://localhost/api/update", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://localhost" },
+        body: JSON.stringify({ version: "latest", confirm: true }),
+      })
+    );
+
     expect(response.status).toBe(200);
+    expect(execFileAsyncMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("accepts quoted DB_MODE and DATABASE_URL values in the compose env file", async () => {
+    readFileMock.mockResolvedValue([
+      'DB_MODE="docker"',
+      'POSTGRES_PASSWORD="postgres-secret"',
+      'DATABASE_URL="postgresql://cliproxyapi:postgres-secret@postgres:5432/cliproxyapi"',
+      'MANAGEMENT_API_KEY="test-management-key"',
+      'JWT_SECRET="test-jwt-secret"',
+    ].join("\n"));
+
+    execFileAsyncMock
+      .mockResolvedValueOnce({ stdout: "compose-ok", stderr: "" })
+      .mockResolvedValueOnce({ stdout: '[{"Image":"sha256:known-good","Config":{"Image":"eceasy/cli-proxy-api-plus:latest"}}]', stderr: "" })
+      .mockResolvedValueOnce({ stdout: "pull-ok", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "up-ok", stderr: "" });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new NextRequest("http://localhost/api/update", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://localhost" },
+        body: JSON.stringify({ version: "latest", confirm: true }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(execFileAsyncMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("fails fast when docker DB mode is missing POSTGRES_PASSWORD in compose env", async () => {
+    readFileMock.mockResolvedValue([
+      "DB_MODE=docker",
+      "DATABASE_URL=postgresql://cliproxyapi@postgres:5432/cliproxyapi",
+      "MANAGEMENT_API_KEY=test-management-key",
+      "JWT_SECRET=test-jwt-secret",
+    ].join("\n"));
+
+    execFileAsyncMock
+      .mockResolvedValueOnce({ stdout: "compose-ok", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "started", stderr: "" });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new NextRequest("http://localhost/api/update", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://localhost" },
+        body: JSON.stringify({ version: "latest", confirm: true }),
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(execFileAsyncMock).toHaveBeenNthCalledWith(1, "docker", ["compose", "version"]);
+    expect(execFileAsyncMock).toHaveBeenNthCalledWith(2, "docker", ["start", "cliproxyapi"]);
+    expect(execFileAsyncMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns a clear config error when the mounted compose file is missing", async () => {
+    accessMock.mockRejectedValueOnce(new Error("ENOENT"));
+    execFileAsyncMock
+      .mockResolvedValueOnce({ stdout: "compose-ok", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "started", stderr: "" });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new NextRequest("http://localhost/api/update", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://localhost" },
+        body: JSON.stringify({ version: "latest", confirm: true }),
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      error: {
+        code: "CONFIG_ERROR",
+        message: "Update compose rollout requires mounted compose file at /opt/cliproxyapi/docker-compose.yml",
+      },
+    });
+    expect(accessMock).toHaveBeenCalledTimes(1);
+    expect(accessMock).toHaveBeenNthCalledWith(1, "/opt/cliproxyapi/docker-compose.yml");
+    expect(readFileMock).not.toHaveBeenCalled();
+    expect(execFileAsyncMock).toHaveBeenNthCalledWith(1, "docker", ["compose", "version"]);
+    expect(execFileAsyncMock).toHaveBeenNthCalledWith(2, "docker", ["start", "cliproxyapi"]);
+  });
+
+  it("returns a clear config error when the mounted compose env file is missing", async () => {
+    accessMock.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("ENOENT"));
+    execFileAsyncMock
+      .mockResolvedValueOnce({ stdout: "compose-ok", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "started", stderr: "" });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new NextRequest("http://localhost/api/update", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://localhost" },
+        body: JSON.stringify({ version: "latest", confirm: true }),
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({
+      error: {
+        code: "CONFIG_ERROR",
+        message: "Update compose rollout requires mounted compose env file at /opt/cliproxyapi/infrastructure/.env",
+      },
+    });
+    expect(accessMock).toHaveBeenNthCalledWith(1, "/opt/cliproxyapi/docker-compose.yml");
+    expect(accessMock).toHaveBeenNthCalledWith(2, "/opt/cliproxyapi/infrastructure/.env");
+    expect(readFileMock).not.toHaveBeenCalled();
+    expect(execFileAsyncMock).toHaveBeenNthCalledWith(1, "docker", ["compose", "version"]);
+    expect(execFileAsyncMock).toHaveBeenNthCalledWith(2, "docker", ["start", "cliproxyapi"]);
   });
 
   it("tries to start the existing proxy container if compose recovery also fails", async () => {
@@ -313,8 +471,10 @@ describe("POST /api/update", () => {
       "docker",
       [
         "compose",
+        "--env-file",
+        "/opt/cliproxyapi/infrastructure/.env",
         "-f",
-        "/opt/cliproxyapi/infrastructure/docker-compose.yml",
+        "/opt/cliproxyapi/docker-compose.yml",
         "up",
         "-d",
         "--no-deps",
@@ -366,8 +526,10 @@ describe("POST /api/update", () => {
       "docker",
       [
         "compose",
+        "--env-file",
+        "/opt/cliproxyapi/infrastructure/.env",
         "-f",
-        "/opt/cliproxyapi/infrastructure/docker-compose.yml",
+        "/opt/cliproxyapi/docker-compose.yml",
         "up",
         "-d",
         "--no-deps",
@@ -382,8 +544,10 @@ describe("POST /api/update", () => {
     );
     expect(execFileAsyncMock).not.toHaveBeenCalledWith("docker", [
       "compose",
+      "--env-file",
+      "/opt/cliproxyapi/infrastructure/.env",
       "-f",
-      "/opt/cliproxyapi/infrastructure/docker-compose.yml",
+      "/opt/cliproxyapi/docker-compose.yml",
       "up",
       "-d",
       "--no-deps",
@@ -393,16 +557,10 @@ describe("POST /api/update", () => {
     expect(response.status).toBe(500);
   });
 
-  it("recreates the original fallback image during bounded docker-run recovery", async () => {
+  it("refuses updates when docker compose is unavailable and only attempts a bounded restart", async () => {
     execFileAsyncMock
       .mockRejectedValueOnce(new Error("unknown command: docker compose"))
-      .mockResolvedValueOnce({ stdout: '[{"Config":{"Image":"eceasy/cli-proxy-api-plus:v1.0.0","Env":["A=1"]},"HostConfig":{"Binds":["/tmp:/tmp"],"PortBindings":{},"RestartPolicy":{"Name":"unless-stopped"}},"NetworkSettings":{"Networks":{}}}]', stderr: "" })
-      .mockResolvedValueOnce({ stdout: '[{"Image":"sha256:previous-v1","Config":{"Image":"eceasy/cli-proxy-api-plus:v1.0.0"}}]', stderr: "" })
-      .mockResolvedValueOnce({ stdout: "pull-ok", stderr: "" })
-      .mockResolvedValueOnce({ stdout: "removed", stderr: "" })
-      .mockRejectedValueOnce(new Error("run failed"))
-      .mockResolvedValueOnce({ stdout: "removed-again", stderr: "" })
-      .mockResolvedValueOnce({ stdout: "recreated", stderr: "" });
+      .mockResolvedValueOnce({ stdout: "started", stderr: "" });
 
     const { POST } = await import("./route");
     const response = await POST(
@@ -418,103 +576,23 @@ describe("POST /api/update", () => {
       "docker",
       ["compose", "version"],
     );
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(
-      8,
+    expect(execFileAsyncMock).toHaveBeenNthCalledWith(2, "docker", ["start", "cliproxyapi"]);
+    expect(execFileAsyncMock).not.toHaveBeenCalledWith("docker", ["pull", "eceasy/cli-proxy-api-plus:latest"]);
+    expect(execFileAsyncMock).not.toHaveBeenCalledWith("docker", ["rm", "-f", "cliproxyapi"]);
+    expect(execFileAsyncMock).not.toHaveBeenCalledWith(
       "docker",
-      expect.arrayContaining(["sha256:previous-v1"]),
-    );
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(
-      6,
-      "docker",
-      expect.arrayContaining(["eceasy/cli-proxy-api-plus:latest"]),
+      expect.arrayContaining(["run", "-d", "--name", "cliproxyapi"]),
     );
     expect(response.status).toBe(500);
   });
 
-  it("uses the running container image digest for docker-run rollback when config image is mutable latest", async () => {
+  it("retags the prior immutable latest reference and reruns compose recovery when pull fails before rollout", async () => {
     execFileAsyncMock
-      .mockRejectedValueOnce(new Error("unknown command: docker compose"))
-      .mockResolvedValueOnce({ stdout: '[{"Image":"sha256:running-image","Config":{"Image":"eceasy/cli-proxy-api-plus:latest","Env":["A=1"]},"HostConfig":{"Binds":["/tmp:/tmp"],"PortBindings":{},"RestartPolicy":{"Name":"unless-stopped"}},"NetworkSettings":{"Networks":{}}}]', stderr: "" })
-      .mockResolvedValueOnce({ stdout: '[{"Image":"sha256:running-image","Config":{"Image":"eceasy/cli-proxy-api-plus:latest"}}]', stderr: "" })
-      .mockResolvedValueOnce({ stdout: "pull-ok", stderr: "" })
-      .mockResolvedValueOnce({ stdout: "removed", stderr: "" })
-      .mockRejectedValueOnce(new Error("run failed"))
-      .mockResolvedValueOnce({ stdout: "removed-again", stderr: "" })
-      .mockResolvedValueOnce({ stdout: "recreated", stderr: "" });
-
-    const { POST } = await import("./route");
-    const response = await POST(
-      new NextRequest("http://localhost/api/update", {
-        method: "POST",
-        headers: { "content-type": "application/json", origin: "http://localhost" },
-        body: JSON.stringify({ version: "latest", confirm: true }),
-      })
-    );
-
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(
-      2,
-      "docker",
-      ["inspect", "cliproxyapi"],
-    );
-    expect(execFileAsyncMock.mock.calls).not.toContainEqual([
-      "docker",
-      ["image", "inspect", "eceasy/cli-proxy-api-plus:latest", "--format", "{{json .}}"],
-    ]);
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(
-      8,
-      "docker",
-      expect.arrayContaining(["sha256:running-image"]),
-    );
-    expect(response.status).toBe(500);
-  });
-
-  it("does not attempt docker-run rollback when the prior image resolves only to mutable latest", async () => {
-    execFileAsyncMock
-      .mockRejectedValueOnce(new Error("unknown command: docker compose"))
-      .mockResolvedValueOnce({ stdout: '[{"Config":{"Image":"eceasy/cli-proxy-api-plus:latest","Env":["A=1"]},"HostConfig":{"Binds":["/tmp:/tmp"],"PortBindings":{},"RestartPolicy":{"Name":"unless-stopped"}},"NetworkSettings":{"Networks":{}}}]', stderr: "" })
-      .mockResolvedValueOnce({ stdout: '[{"Config":{"Image":"eceasy/cli-proxy-api-plus:latest"}}]', stderr: "" })
-      .mockResolvedValueOnce({ stdout: '{"RepoTags":["eceasy/cli-proxy-api-plus:latest"]}', stderr: "" })
-      .mockResolvedValueOnce({ stdout: "pull-ok", stderr: "" })
-      .mockResolvedValueOnce({ stdout: "removed", stderr: "" })
-      .mockRejectedValueOnce(new Error("run failed"))
-      .mockResolvedValueOnce({ stdout: "started", stderr: "" });
-
-    const { POST } = await import("./route");
-    const response = await POST(
-      new NextRequest("http://localhost/api/update", {
-        method: "POST",
-        headers: { "content-type": "application/json", origin: "http://localhost" },
-        body: JSON.stringify({ version: "latest", confirm: true }),
-      })
-    );
-
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(
-      3,
-      "docker",
-      ["inspect", "cliproxyapi"],
-    );
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(
-      4,
-      "docker",
-      ["image", "inspect", "eceasy/cli-proxy-api-plus:latest", "--format", "{{json .}}"],
-    );
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(
-      7,
-      "docker",
-      expect.arrayContaining(["eceasy/cli-proxy-api-plus:latest"]),
-    );
-    expect(execFileAsyncMock).toHaveBeenCalledTimes(7);
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(6, "docker", ["rm", "-f", "cliproxyapi"]);
-    expect(response.status).toBe(500);
-  });
-
-  it("prefers restarting the existing container when docker pull fails before docker-run fallback becomes destructive", async () => {
-    execFileAsyncMock
-      .mockRejectedValueOnce(new Error("unknown command: docker compose"))
-      .mockResolvedValueOnce({ stdout: '[{"Config":{"Image":"eceasy/cli-proxy-api-plus:v1.0.0","Env":["A=1"]},"HostConfig":{"Binds":["/tmp:/tmp"],"PortBindings":{},"RestartPolicy":{"Name":"unless-stopped"}},"NetworkSettings":{"Networks":{}}}]', stderr: "" })
-      .mockResolvedValueOnce({ stdout: '[{"Image":"sha256:healthy-running","Config":{"Image":"eceasy/cli-proxy-api-plus:v1.0.0"}}]', stderr: "" })
+      .mockResolvedValueOnce({ stdout: "compose-ok", stderr: "" })
+      .mockResolvedValueOnce({ stdout: '[{"Image":"sha256:healthy-running","Config":{"Image":"eceasy/cli-proxy-api-plus:latest"}}]', stderr: "" })
       .mockRejectedValueOnce(new Error("pull failed"))
-      .mockResolvedValueOnce({ stdout: "started", stderr: "" });
+      .mockResolvedValueOnce({ stdout: "retagged", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "recovered", stderr: "" });
 
     const { POST } = await import("./route");
     const response = await POST(
@@ -530,14 +608,27 @@ describe("POST /api/update", () => {
       "cliproxyapi",
     ]);
     expect(execFileAsyncMock).toHaveBeenNthCalledWith(3, "docker", [
-      "inspect",
-      "cliproxyapi",
-    ]);
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(4, "docker", [
       "pull",
       "eceasy/cli-proxy-api-plus:latest",
     ]);
-    expect(execFileAsyncMock).toHaveBeenNthCalledWith(5, "docker", ["start", "cliproxyapi"]);
+    expect(execFileAsyncMock).toHaveBeenNthCalledWith(4, "docker", [
+      "tag",
+      "sha256:healthy-running",
+      "eceasy/cli-proxy-api-plus:latest",
+    ]);
+    expect(execFileAsyncMock).toHaveBeenNthCalledWith(5, "docker", [
+      "compose",
+      "--env-file",
+      "/opt/cliproxyapi/infrastructure/.env",
+      "-f",
+      "/opt/cliproxyapi/docker-compose.yml",
+      "up",
+      "-d",
+      "--no-deps",
+      "--force-recreate",
+      "cliproxyapi",
+    ]);
+    expect(execFileAsyncMock).not.toHaveBeenCalledWith("docker", ["start", "cliproxyapi"]);
     expect(execFileAsyncMock).not.toHaveBeenCalledWith("docker", ["rm", "-f", "cliproxyapi"]);
     expect(execFileAsyncMock).not.toHaveBeenCalledWith(
       "docker",
