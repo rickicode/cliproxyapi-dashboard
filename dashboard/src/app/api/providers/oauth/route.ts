@@ -21,6 +21,7 @@ function isContributeOAuthRequest(body: unknown): body is ContributeOAuthRequest
 
   if (typeof obj.provider !== "string") return false;
   if (typeof obj.accountName !== "string") return false;
+  if (obj.accountName.trim().length === 0) return false;
   if (obj.accountEmail !== undefined && typeof obj.accountEmail !== "string") return false;
 
   return true;
@@ -90,9 +91,15 @@ export async function POST(request: NextRequest) {
     return Errors.rateLimited(rateLimit.retryAfterSeconds);
   }
 
-  try {
-    const body = await request.json();
+  let body: unknown;
 
+  try {
+    body = await request.json();
+  } catch {
+    return Errors.validation("Invalid JSON request body");
+  }
+
+  try {
     if (!isContributeOAuthRequest(body)) {
       return Errors.validation("Invalid request body");
     }
@@ -109,13 +116,13 @@ export async function POST(request: NextRequest) {
     );
 
     if (!result.ok) {
-      if (result.error?.includes("already registered")) {
+      if (result.error?.includes("already registered") || result.error?.includes("manual review")) {
         return Errors.conflict(result.error);
       }
       return apiError(ERROR_CODE.PROVIDER_ERROR, result.error ?? "Provider error", 500);
     }
 
-    return NextResponse.json({ id: result.id }, { status: 201 });
+    return NextResponse.json({ id: result.id, resolution: result.resolution }, { status: 201 });
   } catch (error) {
     return Errors.internal("POST /api/providers/oauth error", error);
   }

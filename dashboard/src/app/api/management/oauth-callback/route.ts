@@ -4,13 +4,13 @@ import { validateOrigin } from "@/lib/auth/origin";
 import { checkRateLimitWithPreset } from "@/lib/auth/rate-limit";
 import { Errors } from "@/lib/errors";
 import { prisma } from "@/lib/db";
-import { Prisma } from "@/generated/prisma/client";
 import { logger } from "@/lib/logger";
 import {
   classifyOAuthAutoClaim,
   type OAuthAutoClaimCandidate,
   type OAuthAutoClaimClassification,
 } from "@/lib/providers/oauth-auto-claim";
+import { resolveOAuthOwnership } from "@/lib/providers/oauth-ownership-resolver";
 
 const PROVIDERS = {
   CLAUDE: "claude",
@@ -79,6 +79,35 @@ interface AuthFileEntry {
   email?: string;
 }
 
+interface AuthFilesResponse {
+  files: AuthFileEntry[];
+  hasMalformedEntries: boolean;
+}
+
+const sanitizeAuthFileEntry = (entry: unknown): AuthFileEntry | null => {
+  if (!isRecord(entry) || typeof entry.name !== "string") return null;
+
+  if (entry.provider !== undefined && typeof entry.provider !== "string") return null;
+  if (entry.type !== undefined && typeof entry.type !== "string") return null;
+  if (entry.email !== undefined && typeof entry.email !== "string") return null;
+
+  const sanitized: AuthFileEntry = { name: entry.name };
+
+  if (typeof entry.provider === "string") {
+    sanitized.provider = entry.provider;
+  }
+
+  if (typeof entry.type === "string") {
+    sanitized.type = entry.type;
+  }
+
+  if (typeof entry.email === "string") {
+    sanitized.email = entry.email;
+  }
+
+  return sanitized;
+};
+
 interface OAuthOwnershipRecord {
   accountName: string;
   userId: string;
@@ -92,7 +121,11 @@ type OAuthCallbackAutoClaimResponse =
   | {
     kind: "claimed";
     candidate: OAuthAutoClaimCandidate;
-  }
+   }
+  | {
+      kind: "merged_with_existing";
+      candidate: OAuthAutoClaimCandidate;
+    }
   | OAuthAutoClaimClassification;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -142,7 +175,7 @@ const extractCallbackParams = (callbackUrl: string) => {
   return { code, state };
 };
 
-const fetchAuthFiles = async (): Promise<AuthFileEntry[] | null> => {
+const fetchAuthFiles = async (): Promise<AuthFilesResponse | null> => {
   if (!MANAGEMENT_API_KEY) return null;
 
   try {
@@ -159,11 +192,16 @@ const fetchAuthFiles = async (): Promise<AuthFileEntry[] | null> => {
     const data: unknown = await response.json();
     if (!isRecord(data) || !Array.isArray(data.files)) return null;
 
-    const files = data.files.filter(
-      (entry): entry is AuthFileEntry => isRecord(entry) && typeof entry.name === "string"
-    );
+    let hasMalformedEntries = false;
+    const files = data.files.flatMap((entry) => {
+      const sanitized = sanitizeAuthFileEntry(entry);
+      if (!sanitized) {
+        hasMalformedEntries = true;
+      }
+      return sanitized ? [sanitized] : [];
+    });
 
-    return files;
+    return { files, hasMalformedEntries };
   } catch {
     return null;
   }
@@ -316,6 +354,77 @@ const normalizeAutoClaimResult = async ({
   }
 };
 
+const toAutoClaimCandidate = (
+  accountName: string,
+  accountEmail: string | null | undefined,
+  ownerUserId: string | null,
+  ownerUsername: string | null
+): OAuthAutoClaimCandidate => ({
+  accountName,
+  accountEmail: accountEmail ?? null,
+  ownerUserId,
+  ownerUsername,
+});
+
+const resolveCandidateOwnership = async ({
+  currentUserId,
+  provider,
+  candidate,
+}: {
+  currentUserId: string;
+  provider: Provider;
+  candidate: OAuthAutoClaimCandidate;
+}): Promise<OAuthCallbackAutoClaimResponse> => {
+  const resolution = await resolveOAuthOwnership({
+    currentUserId,
+    provider,
+    accountName: candidate.accountName,
+    accountEmail: candidate.accountEmail ?? null,
+  });
+
+  switch (resolution.kind) {
+    case "claimed":
+    case "merged_with_existing":
+      return {
+        kind: resolution.kind,
+        candidate: toAutoClaimCandidate(
+          resolution.ownership.accountName,
+          resolution.ownership.accountEmail,
+          resolution.ownership.userId,
+          null
+        ),
+      };
+    case "already_owned_by_current_user":
+    case "claimed_by_other_user":
+      return {
+        kind: resolution.kind,
+        candidate: toAutoClaimCandidate(
+          resolution.ownership.accountName,
+          resolution.ownership.accountEmail,
+          resolution.ownership.userId,
+          null
+        ),
+      };
+    case "ambiguous":
+      return {
+        kind: "ambiguous",
+        candidates: resolution.ownerships.map((ownership) =>
+          toAutoClaimCandidate(
+            ownership.accountName,
+            ownership.accountEmail,
+            ownership.userId,
+            null
+          )
+        ),
+      };
+    case "error":
+      return {
+        kind: "error",
+        failure: resolution.failure,
+      };
+  }
+};
+
 export async function POST(request: NextRequest) {
   const session = await verifySession();
 
@@ -351,7 +460,8 @@ export async function POST(request: NextRequest) {
     let responseStatus = 200;
     let resolvedState = state;
 
-    const preCallbackFiles = await fetchAuthFiles();
+    const preCallbackSnapshot = await fetchAuthFiles();
+    const preCallbackFiles = preCallbackSnapshot?.files ?? null;
     const preCallbackNames = preCallbackFiles
       ? new Set(preCallbackFiles.map((f) => f.name))
       : null;
@@ -361,9 +471,17 @@ export async function POST(request: NextRequest) {
         return Errors.validation("Callback URL is required for this provider");
       }
 
+      if (!state) {
+        return Errors.validation("State is required for this provider");
+      }
+
       const callbackParams = extractCallbackParams(callbackUrl);
       if (!callbackParams) {
         return Errors.validation("Callback URL must include code and state");
+      }
+
+      if (callbackParams.state !== state) {
+        return Errors.validation("Callback state does not match the active OAuth flow");
       }
 
       const callbackPath = CALLBACK_PATHS[provider];
@@ -374,7 +492,7 @@ export async function POST(request: NextRequest) {
       const callbackTarget = new URL(callbackPath);
       callbackTarget.searchParams.set("code", callbackParams.code);
       callbackTarget.searchParams.set("state", callbackParams.state);
-      resolvedState = callbackParams.state;
+      resolvedState = state;
 
       const response = await fetch(callbackTarget.toString(), { method: "GET" });
       responseStatus = response.status;
@@ -395,10 +513,13 @@ export async function POST(request: NextRequest) {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
 
-      const afterAuthFiles = await fetchAuthFiles();
-      if (!afterAuthFiles) continue;
+      const afterAuthFileSnapshot = await fetchAuthFiles();
+      if (!afterAuthFileSnapshot) continue;
 
-      if (preCallbackFiles) {
+      const afterAuthFiles = afterAuthFileSnapshot.files;
+      const hasMalformedEntries = afterAuthFileSnapshot.hasMalformedEntries;
+
+      if (preCallbackFiles && !hasMalformedEntries) {
         const diffCandidates = findNewAuthFilesByDiff(preCallbackFiles, afterAuthFiles, provider);
         if (diffCandidates.length > 0) {
           candidateFiles = diffCandidates;
@@ -408,6 +529,11 @@ export async function POST(request: NextRequest) {
           );
           break;
         }
+      } else if (preCallbackFiles && hasMalformedEntries) {
+        logger.warn(
+          { provider, attempt },
+          "OAuth callback: skipping snapshot-diff heuristic due to malformed auth-file entries"
+        );
       }
 
       const stateCandidates = findAuthFilesByState(afterAuthFiles, provider, resolvedState);
@@ -426,7 +552,8 @@ export async function POST(request: NextRequest) {
       // Run unclaimed detection on every attempt for these providers so we
       // can claim on attempt 1 rather than waiting until attempt 8+.
       const runUnclaimed =
-        !PROVIDERS_WITH_CALLBACK.has(provider) || attempt >= MAX_RETRIES - 2;
+        !hasMalformedEntries &&
+        (!PROVIDERS_WITH_CALLBACK.has(provider) || attempt >= MAX_RETRIES - 2);
 
       if (runUnclaimed) {
         const unclaimedCandidates = await findUnclaimedAuthFiles(afterAuthFiles, provider);
@@ -452,6 +579,13 @@ export async function POST(request: NextRequest) {
               );
               break;
             }
+
+            candidateFiles = unclaimedCandidates;
+            logger.info(
+              { provider, strategy: "unclaimed-ambiguous", count: unclaimedCandidates.length },
+              "OAuth callback: multiple unclaimed auth files found without safe newness signal"
+            );
+            break;
           }
 
           if (!PROVIDERS_WITH_CALLBACK.has(provider)) {
@@ -463,6 +597,11 @@ export async function POST(request: NextRequest) {
             break;
           }
         }
+      } else if (hasMalformedEntries) {
+        logger.warn(
+          { provider, attempt },
+          "OAuth callback: skipping heuristic fallback due to malformed auth-file entries"
+        );
       }
     }
 
@@ -484,36 +623,22 @@ export async function POST(request: NextRequest) {
       });
 
       if (initialAutoClaim.kind === "claimed") {
-        const candidate = initialAutoClaim.candidate;
+        autoClaim = await resolveCandidateOwnership({
+          currentUserId: session.userId,
+          provider,
+          candidate: initialAutoClaim.candidate,
+        });
 
-        try {
-          await prisma.providerOAuthOwnership.create({
-            data: {
-              userId: session.userId,
-              provider,
-              accountName: candidate.accountName,
-              accountEmail: candidate.accountEmail || null,
-            },
-          });
-
+        if (autoClaim.kind === "claimed" || autoClaim.kind === "merged_with_existing") {
           logger.info(
-            { provider, accountName: candidate.accountName, userId: session.userId },
-            "OAuth callback: ownership claimed successfully"
+            {
+              provider,
+              accountName: autoClaim.candidate.accountName,
+              userId: session.userId,
+              resolution: autoClaim.kind,
+            },
+            "OAuth callback: ownership resolved successfully"
           );
-
-          autoClaim = initialAutoClaim;
-        } catch (e) {
-          if (
-            e instanceof Prisma.PrismaClientKnownRequestError &&
-            e.code === "P2002"
-          ) {
-            autoClaim = await normalizeAutoClaimResult({
-              currentUserId: session.userId,
-              candidateFiles,
-            });
-          } else {
-            throw e;
-          }
         }
       } else {
         autoClaim = initialAutoClaim;

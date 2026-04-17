@@ -111,6 +111,7 @@ export interface ListOAuthResult {
 export interface ContributeOAuthResult {
   ok: boolean;
   id?: string;
+  resolution?: "claimed" | "already_owned_by_current_user" | "merged_with_existing";
   error?: string;
 }
 
@@ -123,6 +124,7 @@ export interface ImportOAuthResult {
   ok: boolean;
   id?: string;
   accountName?: string;
+  resolution?: "claimed" | "already_owned_by_current_user" | "merged_with_existing";
   error?: string;
 }
 

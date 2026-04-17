@@ -1,4 +1,32 @@
+import type { NextRequest } from "next/server";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+type QuotaTestModel = {
+  id: string;
+  displayName?: string;
+  remainingFraction?: number;
+};
+
+type QuotaTestGroup = {
+  models: QuotaTestModel[];
+};
+
+type QuotaTestAccount = {
+  email: string;
+  groups: QuotaTestGroup[];
+};
+
+type QuotaTestResponse = {
+  accounts: QuotaTestAccount[];
+};
+
+type MockJsonResponse<T = unknown> = {
+  ok: boolean;
+  json: () => Promise<T>;
+  body: { cancel: ReturnType<typeof vi.fn> };
+};
+
+type MockJsonResponseResolver<T = unknown> = (value: MockJsonResponse<T>) => void;
 
 vi.mock("@/lib/auth/session", () => ({
   verifySession: vi.fn(() => ({ userId: "test-user" })),
@@ -89,7 +117,7 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     expect(data.accounts).toHaveLength(1);
@@ -143,7 +171,7 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     const account = data.accounts[0];
@@ -205,7 +233,7 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     const account = data.accounts[0];
@@ -284,7 +312,7 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
@@ -364,7 +392,7 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -374,10 +402,10 @@ describe("GET /api/quota - Gemini CLI support (issue #125)", () => {
     const fetchQuotaCallBody = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
     expect(fetchQuotaCallBody.data).toBe("{\"project\":\"confident-arc-98xjk\"}");
 
-    const account = data.accounts[0];
-    const models = account.groups.flatMap((group: any) => group.models);
-    const claudeModel = models.find((model: any) => model.id === "claude-opus-4-6-thinking");
-    const flashModel = models.find((model: any) => model.id === "gemini-3-flash");
+    const account = data.accounts[0] as QuotaTestAccount;
+    const models = account.groups.flatMap((group) => group.models);
+    const claudeModel = models.find((model) => model.id === "claude-opus-4-6-thinking");
+    const flashModel = models.find((model) => model.id === "gemini-3-flash");
 
     expect(claudeModel?.remainingFraction).toBe(0);
     expect(flashModel?.remainingFraction).toBe(0.8);
@@ -432,7 +460,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     expect(data.accounts).toHaveLength(1);
@@ -485,7 +513,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     const response = await GET(
       new Request("http://localhost/api/quota?view=summary", {
         headers: { cookie: "session=test" },
-      }) as any
+      }) as unknown as NextRequest
     );
     const data = await response.json();
 
@@ -531,13 +559,13 @@ describe("GET /api/quota - imported provider normalization", () => {
         body: { cancel: vi.fn() },
       });
 
-    const routeModule = (await import("./route")) as any;
+    const routeModule = await import("./route");
     const detailSpy = vi.spyOn(routeModule.quotaRouteInternals, "buildQuotaDetailResponse");
 
     const response = await routeModule.GET(
       new Request("http://localhost/api/quota?view=summary", {
         headers: { cookie: "session=test" },
-      }) as any
+      }) as unknown as NextRequest
     );
     const data = await response.json();
 
@@ -566,7 +594,7 @@ describe("GET /api/quota - imported provider normalization", () => {
       ],
     };
 
-    let resolveFirstQuotaCall: ((value: any) => void) | null = null;
+    let resolveFirstQuotaCall: MockJsonResponseResolver | null = null;
 
     fetchMock.mockImplementation((input: string | URL, init?: RequestInit) => {
       const url = String(input);
@@ -601,7 +629,7 @@ describe("GET /api/quota - imported provider normalization", () => {
         };
 
         if (authIndex === "0") {
-          return new Promise((resolve: (value: any) => void) => {
+          return new Promise<MockJsonResponse>((resolve) => {
             resolveFirstQuotaCall = resolve;
           });
         }
@@ -617,7 +645,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     const responsePromise = GET(
       new Request("http://localhost/api/quota", {
         headers: { cookie: "session=test" },
-      }) as any
+      }) as unknown as NextRequest
     );
 
     for (let attempt = 0; attempt < 10 && !resolveFirstQuotaCall; attempt += 1) {
@@ -652,7 +680,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     const data = await response.json();
 
     expect(data.accounts).toHaveLength(2);
-    expect(data.accounts.map((account: any) => account.email)).toEqual([
+    expect((data as QuotaTestResponse).accounts.map((account) => account.email)).toEqual([
       "first@example.com",
       "second@example.com",
     ]);
@@ -720,7 +748,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     const response = await GET(
       new Request("http://localhost/api/quota?view=summary", {
         headers: { cookie: "session=test" },
-      }) as any
+      }) as unknown as NextRequest
     );
     const data = await response.json();
 
@@ -741,7 +769,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     };
 
     let authFilesCallCount = 0;
-    let resolveFirstAuthFiles: ((value: any) => void) | null = null;
+    let resolveFirstAuthFiles: MockJsonResponseResolver | null = null;
 
     fetchMock.mockImplementation((input: string | URL) => {
       const url = String(input);
@@ -751,7 +779,7 @@ describe("GET /api/quota - imported provider normalization", () => {
         const currentAuthFilesCall = authFilesCallCount;
 
         if (currentAuthFilesCall === 1) {
-          return new Promise((resolve: (value: any) => void) => {
+          return new Promise<MockJsonResponse>((resolve) => {
             resolveFirstAuthFiles = resolve;
           });
         }
@@ -792,23 +820,22 @@ describe("GET /api/quota - imported provider normalization", () => {
     const detailPromise = GET(
       new Request("http://localhost/api/quota", {
         headers: { cookie: "session=test" },
-      }) as any
+      }) as unknown as NextRequest
     );
 
     const summaryPromise = GET(
       new Request("http://localhost/api/quota?view=summary", {
         headers: { cookie: "session=test" },
-      }) as any
+      }) as unknown as NextRequest
     );
 
     await Promise.resolve();
     await Promise.resolve();
 
-    if (!resolveFirstAuthFiles) {
+    const resolvePendingAuthFiles = resolveFirstAuthFiles as MockJsonResponseResolver | null;
+    if (!resolvePendingAuthFiles) {
       throw new Error("Expected first auth-files request to be pending");
     }
-
-    const resolvePendingAuthFiles: (value: any) => void = resolveFirstAuthFiles!;
 
     resolvePendingAuthFiles({
       ok: true,
@@ -850,7 +877,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     expect(data.accounts).toHaveLength(1);
@@ -884,7 +911,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     expect(data.accounts).toHaveLength(1);
@@ -932,7 +959,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     expect(data.accounts).toHaveLength(1);
@@ -989,7 +1016,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     expect(data.accounts).toHaveLength(1);
@@ -1019,8 +1046,8 @@ describe("GET /api/quota - imported provider normalization", () => {
       headers: { cookie: "session=test" },
     });
 
-    const responsePromiseA = GET(requestA as any);
-    const responsePromiseB = GET(requestB as any);
+    const responsePromiseA = GET(requestA as unknown as NextRequest);
+    const responsePromiseB = GET(requestB as unknown as NextRequest);
 
     await Promise.resolve();
 
@@ -1113,7 +1140,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     expect(data.accounts).toHaveLength(2);
@@ -1179,7 +1206,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     expect(data.accounts).toHaveLength(1);
@@ -1234,7 +1261,7 @@ describe("GET /api/quota - imported provider normalization", () => {
     const request = new Request("http://localhost/api/quota", {
       headers: { cookie: "session=test" },
     });
-    const response = await GET(request as any);
+    const response = await GET(request as unknown as NextRequest);
     const data = await response.json();
 
     expect(data.accounts).toHaveLength(1);

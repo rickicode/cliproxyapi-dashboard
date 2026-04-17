@@ -113,6 +113,8 @@ export function OAuthCredentialList({
   const t = useTranslations("providers");
   const resolvedDescription = description ?? t("connectedAccountsDescription");
   const resolvedEmptyMessage = emptyMessage ?? t("noAccountsConnected");
+  const toggleLoadingLabel = t("oauthAccountActionPending");
+  const claimLoadingLabel = t("claimingButton");
 
   return (
     <>
@@ -153,14 +155,14 @@ export function OAuthCredentialList({
                 </div>
                 {currentUser && (account.isOwn || currentUser.isAdmin) && (
                   <div className="flex shrink-0 items-center gap-2">
-                    {currentUser.isAdmin && !account.ownerUsername && (
+                    {currentUser.isAdmin && !account.ownerUserId && (
                       <Button
                         variant="secondary"
                         className="px-2.5 py-1 text-xs"
                         disabled={claimingAccountName === account.accountName}
                         onClick={() => onClaim(account.accountName)}
                       >
-                        {claimingAccountName === account.accountName ? "..." : t("claimButton")}
+                        {claimingAccountName === account.accountName ? claimLoadingLabel : t("claimButton")}
                       </Button>
                     )}
                     <Button
@@ -169,7 +171,7 @@ export function OAuthCredentialList({
                       disabled={togglingAccountId === account.id}
                       onClick={() => onToggle(account.id, account.status === "disabled")}
                     >
-                      {togglingAccountId === account.id ? "..." : account.status === "disabled" ? t("enableButton") : t("disableButton")}
+                      {togglingAccountId === account.id ? toggleLoadingLabel : account.status === "disabled" ? t("enableButton") : t("disableButton")}
                     </Button>
                     <Button
                       variant="danger"

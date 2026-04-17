@@ -4,7 +4,6 @@ import { validateOrigin } from "@/lib/auth/origin";
 import { checkRateLimitWithPreset } from "@/lib/auth/rate-limit";
 import { Errors } from "@/lib/errors";
 import { prisma } from "@/lib/db";
-import { Prisma } from "@/generated/prisma/client";
 import { logger } from "@/lib/logger";
 import {
   fetchWithTimeout,
@@ -12,15 +11,43 @@ import {
   MANAGEMENT_API_KEY,
   isRecord,
 } from "@/lib/providers/management-api";
+import { resolveOAuthOwnership } from "@/lib/providers/oauth-ownership-resolver";
 
 interface ClaimRequest {
   accountName: string;
+}
+
+interface ManagementAuthFile {
+  name: string;
+  provider?: string;
+  type?: string;
+  email?: string;
 }
 
 function isClaimRequest(body: unknown): body is ClaimRequest {
   if (!body || typeof body !== "object" || Array.isArray(body)) return false;
   const obj = body as Record<string, unknown>;
   return typeof obj.accountName === "string" && obj.accountName.trim().length > 0;
+}
+
+function isManagementAuthFile(value: unknown): value is ManagementAuthFile {
+  if (!isRecord(value) || typeof value.name !== "string") {
+    return false;
+  }
+
+  if (value.provider !== undefined && typeof value.provider !== "string") {
+    return false;
+  }
+
+  if (value.type !== undefined && typeof value.type !== "string") {
+    return false;
+  }
+
+  if (value.email !== undefined && typeof value.email !== "string") {
+    return false;
+  }
+
+  return true;
 }
 
 export async function POST(request: NextRequest) {
@@ -67,14 +94,6 @@ export async function POST(request: NextRequest) {
       return Errors.internal("Management API key not configured");
     }
 
-    const existing = await prisma.providerOAuthOwnership.findUnique({
-      where: { accountName },
-    });
-
-    if (existing) {
-      return Errors.conflict("Account already has an owner");
-    }
-
     let getRes: Response;
     try {
       getRes = await fetchWithTimeout(`${MANAGEMENT_BASE_URL}/auth-files`, {
@@ -90,47 +109,67 @@ export async function POST(request: NextRequest) {
       return Errors.badGateway("Failed to fetch auth files");
     }
 
-    const getData = await getRes.json();
+    let getData: unknown;
+    try {
+      getData = await getRes.json();
+    } catch (error) {
+      return Errors.badGateway("Invalid management API response", error);
+    }
+
     if (!isRecord(getData) || !Array.isArray(getData.files)) {
       return Errors.badGateway("Invalid management API response");
     }
 
-    const authFiles = getData.files as Array<{
-      name: string;
-      provider?: string;
-      type?: string;
-      email?: string;
-    }>;
+    const matchingFile = getData.files.find((file) => {
+      return isRecord(file) && file.name === accountName;
+    });
 
-    const matchingFile = authFiles.find((f) => f.name === accountName);
     if (!matchingFile) {
       return Errors.notFound("Auth file not found in CLIProxyAPIPlus");
     }
 
-    const provider = matchingFile.provider || matchingFile.type || "unknown";
+    if (!isManagementAuthFile(matchingFile)) {
+      return Errors.badGateway("Invalid management API response");
+    }
 
-    try {
-      const ownership = await prisma.providerOAuthOwnership.create({
-        data: {
-          userId: session.userId,
-          provider,
-          accountName,
-          accountEmail: matchingFile.email || null,
-        },
-      });
+    const provider = matchingFile.provider || matchingFile.type;
+    if (!provider) {
+      return Errors.badGateway("Invalid management API response");
+    }
 
+    const resolution = await resolveOAuthOwnership({
+      currentUserId: session.userId,
+      provider,
+      accountName,
+      accountEmail: matchingFile.email || null,
+    });
+
+    if (resolution.kind === "claimed_by_other_user" || resolution.kind === "ambiguous") {
+      return Errors.conflict("Account already has an owner");
+    }
+
+    if (resolution.kind === "error") {
+      return Errors.internal("Failed to claim OAuth account");
+    }
+
+    if (
+      resolution.kind === "claimed"
+      || resolution.kind === "merged_with_existing"
+      || resolution.kind === "already_owned_by_current_user"
+    ) {
       logger.info(
-        { accountName, provider, userId: session.userId },
-        "Admin claimed ownership of unclaimed OAuth account"
+        { accountName, provider, userId: session.userId, resolution: resolution.kind },
+        "Admin claimed ownership of OAuth account"
       );
 
-      return NextResponse.json({ id: ownership.id, accountName, provider }, { status: 201 });
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-        return Errors.conflict("Account was claimed by another user");
-      }
-      throw e;
+      const status = resolution.kind === "claimed" ? 201 : 200;
+      return NextResponse.json(
+        { id: resolution.ownership.id, accountName, provider },
+        { status }
+      );
     }
+
+    return Errors.conflict("Account already has an owner");
   } catch (error) {
     return Errors.internal("Failed to claim OAuth account", error);
   }

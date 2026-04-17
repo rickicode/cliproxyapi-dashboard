@@ -1,7 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { Prisma } from "@/generated/prisma/client";
 import { type OAuthProvider } from "./constants";
 import { invalidateUsageCaches, invalidateProxyModelsCache } from "@/lib/cache";
 import {
@@ -20,6 +19,7 @@ import {
 import { type OAuthListItem, type OAuthListQuery, buildOAuthListResponse } from "./oauth-listing";
 import type { CodexBulkCredentialInput } from "@/lib/validation/schemas";
 import { inferOAuthProviderFromIdentifiers, isMeaningfulProviderValue } from "./provider-inference";
+import { resolveOAuthOwnership } from "./oauth-ownership-resolver";
 
 export interface BulkImportOAuthCredentialItemResult {
   email: string;
@@ -60,6 +60,59 @@ export interface BulkUpdateOAuthAccountsResult {
   summary: BulkOAuthActionSummary;
   failures: BulkOAuthActionFailure[];
 }
+
+interface AuthFilePollEntry {
+  name: string;
+  provider?: string;
+  type?: string;
+  email?: string;
+}
+
+interface AuthFilePollSnapshot {
+  files: AuthFilePollEntry[];
+  hasMalformedEntries: boolean;
+}
+
+const sanitizeAuthFilePollEntry = (entry: unknown): AuthFilePollEntry | null => {
+  if (!isRecord(entry) || typeof entry.name !== "string") return null;
+
+  if (entry.provider !== undefined && typeof entry.provider !== "string") return null;
+  if (entry.type !== undefined && typeof entry.type !== "string") return null;
+  if (entry.email !== undefined && typeof entry.email !== "string") return null;
+
+  const sanitized: AuthFilePollEntry = { name: entry.name };
+
+  if (typeof entry.provider === "string") {
+    sanitized.provider = entry.provider;
+  }
+
+  if (typeof entry.type === "string") {
+    sanitized.type = entry.type;
+  }
+
+  if (typeof entry.email === "string") {
+    sanitized.email = entry.email;
+  }
+
+  return sanitized;
+};
+
+const parseAuthFilePollSnapshot = (data: unknown): AuthFilePollSnapshot | null => {
+  if (!isRecord(data) || !Array.isArray(data.files)) {
+    return null;
+  }
+
+  let hasMalformedEntries = false;
+  const files = data.files.flatMap((entry) => {
+    const sanitized = sanitizeAuthFilePollEntry(entry);
+    if (!sanitized) {
+      hasMalformedEntries = true;
+    }
+    return sanitized ? [sanitized] : [];
+  });
+
+  return { files, hasMalformedEntries };
+};
 
 export function summarizeBulkOAuthAction(
   actionKeys: string[],
@@ -159,24 +212,26 @@ export async function contributeOAuthAccount(
   accountEmail?: string
 ): Promise<ContributeOAuthResult> {
   try {
-    const existingOwnership = await prisma.providerOAuthOwnership.findUnique({
-      where: { accountName },
+    const resolution = await resolveOAuthOwnership({
+      currentUserId: userId,
+      provider,
+      accountName,
+      accountEmail: accountEmail ?? null,
     });
 
-    if (existingOwnership) {
-      return { ok: false, error: "OAuth account already registered" };
+    if (resolution.kind === "error") {
+      return { ok: false, error: resolution.failure.message };
     }
 
-    const ownership = await prisma.providerOAuthOwnership.create({
-      data: {
-        userId,
-        provider,
-        accountName,
-        accountEmail: accountEmail || null,
-      },
-    });
+    if (resolution.kind === "claimed_by_other_user") {
+      return { ok: false, error: "OAuth account already registered to another user" };
+    }
 
-    return { ok: true, id: ownership.id };
+    if (resolution.kind === "ambiguous") {
+      return { ok: false, error: "OAuth account requires manual review before it can be registered" };
+    }
+
+    return { ok: true, id: resolution.ownership.id, resolution: resolution.kind };
   } catch (error) {
     logger.error({ err: error, provider }, "contributeOAuthAccount error");
     return {
@@ -197,6 +252,40 @@ export async function importOAuthCredential(
   }
 
   try {
+    const cleanupUploadedAuthFile = async (accountName: string): Promise<void> => {
+      const deleteEndpoint = `${MANAGEMENT_BASE_URL}/auth-files?name=${encodeURIComponent(accountName)}`;
+
+      try {
+        const deleteRes = await fetchWithTimeout(deleteEndpoint, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${MANAGEMENT_API_KEY}` },
+        });
+
+        if (!deleteRes.ok) {
+          await deleteRes.body?.cancel();
+          logger.warn(
+            { provider, accountName, status: deleteRes.status },
+            "importOAuthCredential: failed to roll back uploaded auth file"
+          );
+        }
+      } catch (cleanupError) {
+        if (cleanupError instanceof Error && cleanupError.name === "AbortError") {
+          logger.error({
+            err: cleanupError,
+            endpoint: deleteEndpoint,
+            accountName,
+            timeoutMs: FETCH_TIMEOUT_MS,
+          }, "Fetch timeout - importOAuthCredential cleanup DELETE");
+          return;
+        }
+
+        logger.error(
+          { err: cleanupError, provider, accountName },
+          "importOAuthCredential: cleanup threw while rolling back uploaded auth file"
+        );
+      }
+    };
+
     // Validate JSON content
     let parsedContent: unknown;
     try {
@@ -218,6 +307,7 @@ export async function importOAuthCredential(
 
     // Snapshot existing auth file names before upload to diff later
     const preExistingNames = new Set<string>();
+    let preUploadSnapshotSucceeded = false;
     try {
       const snapshotRes = await fetchWithTimeout(endpoint, {
         method: "GET",
@@ -225,11 +315,11 @@ export async function importOAuthCredential(
       });
       if (snapshotRes.ok) {
         const snapshotData = await snapshotRes.json();
-        if (isRecord(snapshotData) && Array.isArray(snapshotData.files)) {
-          for (const f of snapshotData.files) {
-            if (isRecord(f) && typeof f.name === "string") {
-              preExistingNames.add(f.name);
-            }
+        const snapshot = parseAuthFilePollSnapshot(snapshotData);
+        if (snapshot) {
+          preUploadSnapshotSucceeded = true;
+          for (const file of snapshot.files) {
+            preExistingNames.add(file.name);
           }
         }
       } else {
@@ -296,30 +386,29 @@ export async function importOAuthCredential(
       }
 
       const getData = await getRes.json();
-      if (!isRecord(getData) || !Array.isArray(getData.files)) {
+      const pollSnapshot = parseAuthFilePollSnapshot(getData);
+      if (!pollSnapshot) {
         continue;
       }
 
-      const files = getData.files as Array<{
-        name: string;
-        provider?: string;
-        type?: string;
-        email?: string;
-      }>;
+      const { files, hasMalformedEntries } = pollSnapshot;
 
       // Only consider files that did NOT exist before our upload
       const newFiles = files.filter((file) => !preExistingNames.has(file.name));
 
-      // Primary: match new files by filename
-      const matchingFile = newFiles.find((file) => {
-        return file.name === fileName ||
-          file.name.includes(fileName.replace(/\.json$/i, ""));
-      });
+      const requestedBaseName = fileName.replace(/\.json$/i, "");
+
+      // Primary: exact filename match wins; otherwise only accept a single fuzzy basename match.
+      const exactMatch = newFiles.find((file) => file.name === fileName) ?? null;
+      const fuzzyMatches = exactMatch
+        ? []
+        : newFiles.filter((file) => file.name.includes(requestedBaseName));
+      const matchingFile = exactMatch || (fuzzyMatches.length === 1 ? fuzzyMatches[0] : null);
 
       // Fallback: if snapshot was available and there's exactly one new file
       // matching the provider, use it (refuse if ambiguous)
       let fallbackFile: (typeof newFiles)[number] | null = null;
-      if (!matchingFile && preExistingNames.size > 0) {
+      if (!matchingFile && preUploadSnapshotSucceeded && !hasMalformedEntries) {
         const providerMatches = newFiles.filter((file) => {
           const fileProvider = (file.provider || file.type || "").toLowerCase();
           return fileProvider === provider.toLowerCase();
@@ -327,6 +416,11 @@ export async function importOAuthCredential(
         if (providerMatches.length === 1) {
           fallbackFile = providerMatches[0];
         }
+      } else if (!matchingFile && hasMalformedEntries) {
+        logger.warn(
+          { provider, fileName },
+          "importOAuthCredential: skipping heuristic fallback due to malformed auth-file entries"
+        );
       }
 
       const resolvedFile = matchingFile || fallbackFile;
@@ -339,39 +433,49 @@ export async function importOAuthCredential(
     }
 
     if (!claimedAccountName) {
-      // Upload succeeded but we couldn't find the file to claim
-      // This is not a hard failure — the credential was imported
       logger.warn(
         { provider, fileName },
         "importOAuthCredential: uploaded but could not find file to claim ownership"
       );
-      invalidateUsageCaches();
-      invalidateProxyModelsCache();
-      return { ok: true, accountName: fileName };
+      return {
+        ok: false,
+        error: "Credential upload succeeded but ownership could not be verified; manual review required",
+      };
     }
 
-    // Create ownership record in dashboard DB
-    try {
-      const ownership = await prisma.providerOAuthOwnership.create({
-        data: {
-          userId,
-          provider,
-          accountName: claimedAccountName,
-          accountEmail: claimedEmail,
-        },
-      });
-      invalidateUsageCaches();
-      invalidateProxyModelsCache();
-      return { ok: true, id: ownership.id, accountName: claimedAccountName };
-    } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === "P2002"
-      ) {
-        return { ok: false, error: "Credential already imported and claimed" };
-      }
-      throw e;
+    const resolution = await resolveOAuthOwnership({
+      currentUserId: userId,
+      provider,
+      accountName: claimedAccountName,
+      accountEmail: claimedEmail,
+    });
+
+    if (resolution.kind === "error") {
+      await cleanupUploadedAuthFile(claimedAccountName);
+      return { ok: false, error: resolution.failure.message };
     }
+
+    if (resolution.kind === "claimed_by_other_user") {
+      await cleanupUploadedAuthFile(claimedAccountName);
+      return { ok: false, error: "Credential already imported and claimed by another user" };
+    }
+
+    if (resolution.kind === "ambiguous") {
+      await cleanupUploadedAuthFile(claimedAccountName);
+      return {
+        ok: false,
+        error: "Credential import requires manual review before ownership can be assigned",
+      };
+    }
+
+    invalidateUsageCaches();
+    invalidateProxyModelsCache();
+    return {
+      ok: true,
+      id: resolution.ownership.id,
+      accountName: claimedAccountName,
+      resolution: resolution.kind,
+    };
   } catch (error) {
     logger.error({ err: error, provider, fileName }, "importOAuthCredential error");
     return {
