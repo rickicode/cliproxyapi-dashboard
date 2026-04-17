@@ -1,3 +1,4 @@
+import type { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const verifySession = vi.fn();
@@ -24,12 +25,22 @@ describe("POST /api/usage/collect", () => {
 
   async function callRoute() {
     const { POST } = await import("./route");
-    return POST(new Request("http://localhost/api/usage/collect", { method: "POST", headers: { origin: "http://localhost" } }) as any);
+    return POST(
+      new Request("http://localhost/api/usage/collect", {
+        method: "POST",
+        headers: { origin: "http://localhost" },
+      }) as unknown as NextRequest
+    );
   }
 
   async function callRouteWithHeaders(headers: Record<string, string>) {
     const { POST } = await import("./route");
-    return POST(new Request("http://localhost/api/usage/collect", { method: "POST", headers }) as any);
+    return POST(
+      new Request("http://localhost/api/usage/collect", {
+        method: "POST",
+        headers,
+      }) as unknown as NextRequest
+    );
   }
 
   it("returns success payload when collector succeeds", async () => {

@@ -396,11 +396,14 @@ export async function importOAuthCredential(
       // Only consider files that did NOT exist before our upload
       const newFiles = files.filter((file) => !preExistingNames.has(file.name));
 
-      // Primary: match new files by filename
-      const matchingFile = newFiles.find((file) => {
-        return file.name === fileName ||
-          file.name.includes(fileName.replace(/\.json$/i, ""));
-      });
+      const requestedBaseName = fileName.replace(/\.json$/i, "");
+
+      // Primary: exact filename match wins; otherwise only accept a single fuzzy basename match.
+      const exactMatch = newFiles.find((file) => file.name === fileName) ?? null;
+      const fuzzyMatches = exactMatch
+        ? []
+        : newFiles.filter((file) => file.name.includes(requestedBaseName));
+      const matchingFile = exactMatch || (fuzzyMatches.length === 1 ? fuzzyMatches[0] : null);
 
       // Fallback: if snapshot was available and there's exactly one new file
       // matching the provider, use it (refuse if ambiguous)

@@ -374,6 +374,47 @@ describe("importOAuthCredential", () => {
     });
   });
 
+  it("fails conservatively when multiple fuzzy basename matches exist", async () => {
+    resolveOAuthOwnershipMock.mockClear();
+
+    vi.mocked(fetchWithTimeout)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ files: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 201 }))
+      .mockImplementation(() => Promise.resolve(
+        new Response(
+          JSON.stringify({
+            files: [
+              {
+                name: "codex_user@example.com_backup.json",
+                provider: "codex",
+                email: "user@example.com",
+              },
+              {
+                name: "codex_user@example.com_v2.json",
+                provider: "codex",
+                email: "user@example.com",
+              },
+            ],
+          }),
+          { status: 200 }
+        )
+      ));
+
+    await expect(
+      importOAuthCredential(
+        "user-1",
+        "codex",
+        "codex_user@example.com.json",
+        JSON.stringify({ type: "codex", email: "user@example.com", access_token: "token" })
+      )
+    ).resolves.toEqual({
+      ok: false,
+      error: "Credential upload succeeded but ownership could not be verified; manual review required",
+    });
+
+    expect(resolveOAuthOwnershipMock).not.toHaveBeenCalled();
+  });
+
   it("fails conservatively when upload cannot be matched to a claimable auth file", async () => {
     resolveOAuthOwnershipMock.mockClear();
 
