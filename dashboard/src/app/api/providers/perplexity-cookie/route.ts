@@ -41,7 +41,15 @@ async function fetchSidecarModels(): Promise<Array<{ upstreamName: string; alias
 
 async function syncPerplexityProvider(
   userId: string
-): Promise<{ created: boolean; modelsUpdated: number }> {
+): Promise<{
+  created: boolean;
+  modelsUpdated: number;
+  syncStatus: "ok" | "failed";
+  syncMessage?: string;
+}> {
+  const createSyncFailureMessage = (operation: "create" | "update") =>
+    `Backend sync failed - provider ${operation === "create" ? "created" : "updated"} but may not work immediately`;
+
   const models = await fetchSidecarModels();
 
   const existingProvider = await prisma.customProvider.findUnique({
@@ -65,22 +73,37 @@ async function syncPerplexityProvider(
       },
     });
 
-    await syncCustomProviderToProxy(
-      {
-        providerId: "perplexity-pro",
-        baseUrl: SIDECAR_BASE_URL,
-        apiKey: "sk-perplexity-sidecar",
-        models,
-        excludedModels: [],
-      },
-      "create"
-    );
+    try {
+      const syncResult = await syncCustomProviderToProxy(
+        {
+          providerId: "perplexity-pro",
+          baseUrl: SIDECAR_BASE_URL,
+          apiKey: "sk-perplexity-sidecar",
+          models,
+          excludedModels: [],
+        },
+        "create"
+      );
 
-    return { created: true, modelsUpdated: models.length };
+      return {
+        created: true,
+        modelsUpdated: models.length,
+        syncStatus: syncResult.syncStatus,
+        syncMessage: syncResult.syncMessage,
+      };
+    } catch (error) {
+      logger.error({ err: error, userId }, "Failed to sync perplexity-pro custom provider");
+      return {
+        created: true,
+        modelsUpdated: models.length,
+        syncStatus: "failed",
+        syncMessage: createSyncFailureMessage("create"),
+      };
+    }
   }
 
   if (existingProvider.userId !== userId) {
-    return { created: false, modelsUpdated: 0 };
+    return { created: false, modelsUpdated: 0, syncStatus: "ok" };
   }
 
   const existingNames = new Set(existingProvider.models.map((m) => m.upstreamName));
@@ -90,7 +113,7 @@ async function syncPerplexityProvider(
     models.some((m) => !existingNames.has(m.upstreamName));
 
   if (!hasChanges) {
-    return { created: false, modelsUpdated: 0 };
+    return { created: false, modelsUpdated: 0, syncStatus: "ok" };
   }
 
   await prisma.$transaction(async (tx) => {
@@ -103,18 +126,33 @@ async function syncPerplexityProvider(
     });
   });
 
-  await syncCustomProviderToProxy(
-    {
-      providerId: "perplexity-pro",
-      baseUrl: SIDECAR_BASE_URL,
-      apiKey: "sk-perplexity-sidecar",
-      models,
-      excludedModels: [],
-    },
-    "update"
-  );
+  try {
+    const syncResult = await syncCustomProviderToProxy(
+      {
+        providerId: "perplexity-pro",
+        baseUrl: SIDECAR_BASE_URL,
+        apiKey: "sk-perplexity-sidecar",
+        models,
+        excludedModels: [],
+      },
+      "update"
+    );
 
-  return { created: false, modelsUpdated: models.length };
+    return {
+      created: false,
+      modelsUpdated: models.length,
+      syncStatus: syncResult.syncStatus,
+      syncMessage: syncResult.syncMessage,
+    };
+  } catch (error) {
+    logger.error({ err: error, userId }, "Failed to sync perplexity-pro custom provider");
+    return {
+      created: false,
+      modelsUpdated: models.length,
+      syncStatus: "failed",
+      syncMessage: createSyncFailureMessage("update"),
+    };
+  }
 }
 
 function isValidCookieJson(raw: string): { valid: boolean; error?: string } {
@@ -227,21 +265,16 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    let providerProvisioned = false;
-    let modelsUpdated = 0;
+    const result = await syncPerplexityProvider(session.userId);
+    const providerProvisioned = result.created;
+    const modelsUpdated = result.modelsUpdated;
+    const syncStatus = result.syncStatus;
+    const syncMessage = result.syncMessage;
 
-    try {
-      const result = await syncPerplexityProvider(session.userId);
-      providerProvisioned = result.created;
-      modelsUpdated = result.modelsUpdated;
-    } catch (error) {
-      logger.error(
-        { err: error, userId: session.userId },
-        "Failed to sync perplexity-pro custom provider"
-      );
-    }
-
-    return NextResponse.json({ cookie, providerProvisioned, modelsUpdated }, { status: 201 });
+    return NextResponse.json(
+      { cookie, providerProvisioned, modelsUpdated, syncStatus, syncMessage },
+      { status: 201 }
+    );
   } catch (error) {
     return Errors.internal("save perplexity cookie", error);
   }

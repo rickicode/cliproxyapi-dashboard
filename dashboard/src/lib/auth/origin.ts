@@ -24,40 +24,22 @@ function toUrl(value: string): URL | null {
   }
 }
 
-function getForwardedHost(request: NextRequest): string | null {
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  if (forwardedHost) {
-    return forwardedHost.split(",")[0]?.trim() ?? null;
-  }
-
-  const host = request.headers.get("host");
-  return host ? host.trim() : null;
-}
-
-function getForwardedProtocol(request: NextRequest, fallbackProtocol: string): string {
-  const forwardedProto = request.headers.get("x-forwarded-proto");
-  if (!forwardedProto) return fallbackProtocol;
-
-  return forwardedProto.split(",")[0]?.trim() || fallbackProtocol;
-}
-
 export function validateOrigin(request: NextRequest): NextResponse | null {
   const origin = request.headers.get("origin");
-  
+
   if (!origin) {
-    return null;
+    return NextResponse.json(
+      { error: "Forbidden" },
+      { status: 403 }
+    );
   }
-  
+
   try {
     const originUrl = new URL(origin);
     const requestUrl = new URL(request.url);
 
-    const effectiveHost = getForwardedHost(request) ?? requestUrl.host;
-    const effectiveProtocol = getForwardedProtocol(request, requestUrl.protocol.replace(":", ""));
-
     const allowedCandidates = [
       requestUrl.origin,
-      `${effectiveProtocol}://${effectiveHost}`,
       process.env.DASHBOARD_URL,
     ]
       .filter((value): value is string => typeof value === "string" && value.length > 0)
@@ -80,6 +62,6 @@ export function validateOrigin(request: NextRequest): NextResponse | null {
       { status: 403 }
     );
   }
-  
+
   return null;
 }

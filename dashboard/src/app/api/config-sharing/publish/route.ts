@@ -101,7 +101,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return Errors.validation("Invalid JSON body");
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return Errors.validation("Invalid request body");
+    }
 
     if (!isCreatePublishRequest(body)) {
       return Errors.validation("Invalid request body");
@@ -159,7 +168,16 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return Errors.validation("Invalid JSON body");
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return Errors.validation("Invalid request body");
+    }
     
     if (!isUpdatePublishRequest(body)) {
       return Errors.validation("Invalid request body");

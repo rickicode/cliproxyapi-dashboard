@@ -20,6 +20,7 @@ import { type OAuthListItem, type OAuthListQuery, buildOAuthListResponse } from 
 import type { CodexBulkCredentialInput } from "@/lib/validation/schemas";
 import { inferOAuthProviderFromIdentifiers, isMeaningfulProviderValue } from "./provider-inference";
 import { resolveOAuthOwnership } from "./oauth-ownership-resolver";
+import { parseAuthFilesResponse } from "./auth-files";
 
 export interface BulkImportOAuthCredentialItemResult {
   email: string;
@@ -73,6 +74,17 @@ interface AuthFilePollSnapshot {
   hasMalformedEntries: boolean;
 }
 
+interface OAuthListAuthFileEntry {
+  id: string;
+  name: string;
+  provider?: string;
+  type?: string;
+  email?: string;
+  status?: string;
+  status_message?: string;
+  unavailable?: boolean;
+}
+
 const sanitizeAuthFilePollEntry = (entry: unknown): AuthFilePollEntry | null => {
   if (!isRecord(entry) || typeof entry.name !== "string") return null;
 
@@ -97,13 +109,45 @@ const sanitizeAuthFilePollEntry = (entry: unknown): AuthFilePollEntry | null => 
   return sanitized;
 };
 
+const sanitizeOAuthListAuthFileEntry = (entry: unknown): OAuthListAuthFileEntry | null => {
+  if (!isRecord(entry) || typeof entry.id !== "string" || typeof entry.name !== "string") {
+    return null;
+  }
+
+  if (entry.provider !== undefined && typeof entry.provider !== "string") return null;
+  if (entry.type !== undefined && typeof entry.type !== "string") return null;
+  if (entry.email !== undefined && typeof entry.email !== "string") return null;
+  if (entry.status !== undefined && typeof entry.status !== "string") return null;
+  if (entry.status_message !== undefined && typeof entry.status_message !== "string") return null;
+  if (entry.unavailable !== undefined && typeof entry.unavailable !== "boolean") return null;
+
+  return {
+    id: entry.id,
+    name: entry.name,
+    provider: entry.provider,
+    type: entry.type,
+    email: entry.email,
+    status: entry.status,
+    status_message: entry.status_message,
+    unavailable: entry.unavailable,
+  };
+};
+
 const parseAuthFilePollSnapshot = (data: unknown): AuthFilePollSnapshot | null => {
-  if (!isRecord(data) || !Array.isArray(data.files)) {
+  const hasSupportedShape = Array.isArray(data)
+    || (isRecord(data) && (Array.isArray(data.files) || Array.isArray(data.auth_files)));
+
+  if (!hasSupportedShape) {
     return null;
   }
 
   let hasMalformedEntries = false;
-  const files = data.files.flatMap((entry) => {
+  const rawFiles = parseAuthFilesResponse<Record<string, unknown>>(data);
+  if (!rawFiles) {
+    return { files: [], hasMalformedEntries: true };
+  }
+
+  const files = rawFiles.flatMap((entry) => {
     const sanitized = sanitizeAuthFilePollEntry(entry);
     if (!sanitized) {
       hasMalformedEntries = true;
@@ -556,22 +600,26 @@ export async function listOAuthWithOwnership(
         return { ok: false, error: `Failed to fetch OAuth accounts: HTTP ${getRes.status}` };
       }
 
-     const getData = await getRes.json();
+     const getData: unknown = await getRes.json();
+     const hasSupportedShape = Array.isArray(getData)
+       || (isRecord(getData) && (Array.isArray(getData.files) || Array.isArray(getData.auth_files)));
 
-    if (!isRecord(getData) || !Array.isArray(getData.files)) {
+    if (!hasSupportedShape) {
       return { ok: false, error: "Invalid Management API response for OAuth accounts" };
     }
 
-    const authFiles = getData.files as Array<{
-      id: string;
-      name: string;
-      provider?: string;
-      type?: string;
-      email?: string;
-      status?: string;
-      status_message?: string;
-      unavailable?: boolean;
-    }>;
+    const rawAuthFiles = parseAuthFilesResponse<Record<string, unknown>>(getData);
+    if (!rawAuthFiles) {
+      return { ok: false, error: "Invalid Management API response for OAuth accounts" };
+    }
+
+    const authFiles = rawAuthFiles
+      .map((entry) => sanitizeOAuthListAuthFileEntry(entry))
+      .filter((entry): entry is OAuthListAuthFileEntry => entry !== null);
+
+    if (authFiles.length !== rawAuthFiles.length) {
+      return { ok: false, error: "Invalid Management API response for OAuth accounts" };
+    }
 
     const accountNames = authFiles.map((file) => file.name);
 

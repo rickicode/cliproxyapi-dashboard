@@ -104,8 +104,22 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
-    const { username, password, isAdmin } = body;
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return Errors.validation("Invalid JSON body");
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return Errors.validation("Invalid request body");
+    }
+
+    const { username, password, isAdmin } = body as {
+      username?: unknown;
+      password?: unknown;
+      isAdmin?: unknown;
+    };
 
     if (!username || !password) {
       return Errors.missingFields(["username", "password"]);
@@ -212,6 +226,13 @@ export async function DELETE(request: NextRequest) {
 
     if (targetUser.id === authResult.userId) {
       return Errors.validation("Cannot delete your own account");
+    }
+
+    if (targetUser.isAdmin) {
+      const remainingAdminCount = await prisma.user.count({ where: { isAdmin: true } });
+      if (remainingAdminCount <= 1) {
+        return Errors.validation("Cannot delete the last admin account");
+      }
     }
 
     const cascadeResult = await cascadeDeleteUserProviders(userIdToDelete, true);

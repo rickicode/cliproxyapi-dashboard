@@ -1,11 +1,68 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+
+const {
+  mockUseTranslations,
+  mockUseRouter,
+  mockUsePathname,
+  mockUseSearchParams,
+  mockUseToast,
+} = vi.hoisted(() => ({
+  mockUseTranslations: vi.fn(),
+  mockUseRouter: vi.fn(),
+  mockUsePathname: vi.fn(),
+  mockUseSearchParams: vi.fn(),
+  mockUseToast: vi.fn(),
+}));
+
+vi.mock("next-intl", () => ({
+  useTranslations: (...args: Parameters<typeof mockUseTranslations>) => mockUseTranslations(...args),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => mockUseRouter(),
+  usePathname: () => mockUsePathname(),
+  useSearchParams: () => mockUseSearchParams(),
+}));
+
+vi.mock("@/components/ui/toast", () => ({
+  useToast: () => mockUseToast(),
+}));
+
+vi.mock("@/components/ui/card", () => ({
+  Card: ({ children }: { children: React.ReactNode }) => <div data-card>{children}</div>,
+  CardHeader: ({ children }: { children: React.ReactNode }) => <div data-card-header>{children}</div>,
+  CardTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
+  CardContent: ({ children }: { children: React.ReactNode }) => <div data-card-content>{children}</div>,
+}));
+
+vi.mock("@/components/connected-accounts/connected-accounts-toolbar", () => ({
+  ConnectedAccountsToolbar: () => <div>TOOLBAR_RENDERED</div>,
+}));
+
+vi.mock("@/components/connected-accounts/connected-accounts-bulk-bar", () => ({
+  ConnectedAccountsBulkBar: () => <div>BULK_BAR_RENDERED</div>,
+}));
+
+vi.mock("@/components/connected-accounts/connected-accounts-table", () => ({
+  ConnectedAccountsTable: () => <div>TABLE_RENDERED</div>,
+  getSelectableConnectedAccountsActionKeys: () => [],
+}));
+
+vi.mock("@/components/connected-accounts/connected-accounts-pagination", () => ({
+  ConnectedAccountsPagination: () => <div>PAGINATION_RENDERED</div>,
+}));
+
+import { ConnectedAccountsPage } from "@/components/connected-accounts/connected-accounts-page";
 import {
   buildConnectedAccountsSearch,
   createConnectedAccountsRuntime,
   loadConnectedAccountsPageData,
+  refreshConnectedAccountsPageData,
+  shouldRenderConnectedAccountsResults,
   submitConnectedAccountRowAction,
   type ConnectedAccountsQueryState,
-} from "@/components/connected-accounts/connected-accounts-page";
+} from "@/components/connected-accounts/connected-accounts-page-logic";
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -21,7 +78,134 @@ const baseQuery: ConnectedAccountsQueryState = {
   pageSize: 25,
 };
 
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+mockUseTranslations.mockImplementation((namespace: string) => (key: string) => {
+  if (namespace === "providers") {
+    return {
+      connectedAccountsTitle: "Connected Accounts",
+      connectedAccountsDescription: "Active OAuth provider connections",
+      toastOAuthLoadFailed: "Failed to load OAuth accounts",
+    }[key] ?? key;
+  }
+
+  return {
+    loading: "Loading...",
+  }[key] ?? key;
+});
+
+mockUseRouter.mockReturnValue({
+  replace: vi.fn(),
+  push: vi.fn(),
+  refresh: vi.fn(),
+  back: vi.fn(),
+  forward: vi.fn(),
+  prefetch: vi.fn(),
+});
+mockUsePathname.mockReturnValue("/dashboard/providers/connected-accounts");
+mockUseSearchParams.mockReturnValue(new URLSearchParams(""));
+mockUseToast.mockReturnValue({ showToast: vi.fn() });
+
 describe("Connected Accounts page helpers", () => {
+  it("handles a rejected initial page load by setting persistent error state, showing a toast, and clearing loading", async () => {
+    const setData = vi.fn();
+    const setLoadError = vi.fn();
+    const setLoading = vi.fn();
+    const showToast = vi.fn();
+    const replaceQuery = vi.fn();
+    const loadAbortControllerRef = { current: null as AbortController | null };
+    const runtime = createConnectedAccountsRuntime({
+      getLatestRequestId: () => 1,
+    });
+
+    await refreshConnectedAccountsPageData({
+      nextQuery: {
+        q: "",
+        status: "all",
+        page: 1,
+        pageSize: 50,
+      },
+      requestId: 1,
+      runtime,
+      loadAbortControllerRef,
+      replaceQuery,
+      setData,
+      setLoadError,
+      setLoading,
+      showToast,
+      loadFailedMessage: "Failed to load OAuth accounts",
+      loadData: vi.fn(async () => {
+        throw new Error("oauth-list-500");
+      }) as typeof loadConnectedAccountsPageData,
+    });
+
+    expect(setLoadError).toHaveBeenCalledTimes(2);
+    expect(setLoadError).toHaveBeenNthCalledWith(1, null);
+    expect(setLoadError).toHaveBeenNthCalledWith(2, "Failed to load OAuth accounts");
+    expect(showToast).toHaveBeenCalledTimes(1);
+    expect(showToast).toHaveBeenCalledWith("Failed to load OAuth accounts", "error");
+    expect(setLoading).toHaveBeenCalledTimes(2);
+    expect(setLoading).toHaveBeenNthCalledWith(1, true);
+    expect(setLoading).toHaveBeenNthCalledWith(2, false);
+    expect(setData).not.toHaveBeenCalled();
+    expect(replaceQuery).not.toHaveBeenCalled();
+    expect(loadAbortControllerRef.current).toBeNull();
+  });
+
+  it("suppresses the results branch when loading is complete but the initial load failed", () => {
+    expect(
+      shouldRenderConnectedAccountsResults({
+        data: null,
+        loadError: "Failed to load OAuth accounts",
+      })
+    ).toBe(false);
+
+    expect(
+      shouldRenderConnectedAccountsResults({
+        data: {
+          items: [],
+          page: 1,
+          pageSize: 50,
+          total: 0,
+          totalPages: 1,
+          availableStatuses: [],
+        },
+        loadError: "Failed to load OAuth accounts",
+      })
+    ).toBe(true);
+
+    expect(
+      shouldRenderConnectedAccountsResults({
+        data: null,
+        loadError: null,
+      })
+    ).toBe(true);
+  });
+
+  it("renders the persistent inline alert branch and suppresses results when the initial load failed", () => {
+    const markup = renderToStaticMarkup(
+      <ConnectedAccountsPage
+        initialState={{
+          data: null,
+          loading: false,
+          loadError: "Failed to load OAuth accounts",
+          selectedActionKeys: [],
+          loadingActionKey: null,
+          loadingBulkAction: null,
+        }}
+      />
+    );
+
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain("Failed to load OAuth accounts");
+    expect(markup).toContain("TOOLBAR_RENDERED");
+    expect(markup).toContain("BULK_BAR_RENDERED");
+    expect(markup).not.toContain("TABLE_RENDERED");
+    expect(markup).not.toContain("PAGINATION_RENDERED");
+  });
+
   it("preserves query-string filters when refreshing after a row action", async () => {
     const fetchMock = async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);

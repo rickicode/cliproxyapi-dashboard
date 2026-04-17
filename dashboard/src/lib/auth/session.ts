@@ -1,11 +1,20 @@
 import "server-only";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { cache } from "react";
 import { verifyToken, type SessionPayload } from "./jwt";
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 
 const DEFAULT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+const SESSION_COOKIE_NAME = "session";
+
+function allowDevAuthBypass(): boolean {
+  return process.env.SKIP_AUTH === "1" && process.env.NODE_ENV === "test";
+}
+
+export interface VerifiedSession extends SessionPayload {
+  isDevBypass?: boolean;
+}
 
 function parseExpiry(expiresIn: string): number {
   const match = expiresIn.match(/^(\d+)([smhd])$/);
@@ -22,12 +31,14 @@ function parseExpiry(expiresIn: string): number {
   }
 }
 
-const SESSION_COOKIE_NAME = "session";
-
-export const verifySession = cache(async (): Promise<SessionPayload | null> => {
-  // DEV BYPASS: skip auth when SKIP_AUTH=1
-  if (process.env.SKIP_AUTH === "1") {
-    return { userId: "dev-user-id", username: "dev", sessionVersion: 0 };
+export const verifySession = cache(async (): Promise<VerifiedSession | null> => {
+  if (allowDevAuthBypass()) {
+    return {
+      userId: "dev-user-id",
+      username: "dev",
+      sessionVersion: 0,
+      isDevBypass: true,
+    };
   }
 
   const cookieStore = await cookies();
@@ -70,17 +81,9 @@ export async function createSession(_payload: SessionPayload, token: string): Pr
   const expiresAt = new Date(Date.now() + parseExpiry(env.JWT_EXPIRES_IN));
   const cookieStore = await cookies();
 
-  // Determine secure flag from actual request protocol.
-  // When behind a reverse proxy (Caddy, nginx), X-Forwarded-Proto tells us the real protocol.
-  // When the header is absent (direct access, no proxy), fall back to NODE_ENV
-  // so local HTTP dev works (NODE_ENV=development) while production defaults to secure.
-  const headerStore = await headers();
-  const proto = headerStore.get("x-forwarded-proto");
-  const isSecure = proto ? proto === "https" : process.env.NODE_ENV === "production";
-
   cookieStore.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: isSecure,
+    secure: process.env.NODE_ENV === "production",
     expires: expiresAt,
     sameSite: "lax",
     path: "/",

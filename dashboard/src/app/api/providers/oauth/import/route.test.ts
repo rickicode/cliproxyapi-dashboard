@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
+async function useRealValidateOrigin() {
+  const actual = await vi.importActual<typeof import("@/lib/auth/origin")>("@/lib/auth/origin");
+  validateOriginMock.mockImplementation(actual.validateOrigin);
+}
+
 vi.mock("server-only", () => ({}));
 
 const verifySessionMock = vi.fn();
@@ -60,6 +65,65 @@ describe("POST /api/providers/oauth/import", () => {
     validateOriginMock.mockReturnValue(null);
     checkRateLimitWithPresetMock.mockReturnValue({ allowed: true });
     extractIpAddressMock.mockReturnValue("127.0.0.1");
+  });
+
+  it("returns 403 when Origin header is omitted", async () => {
+    await useRealValidateOrigin();
+
+    const { POST } = await import("./route");
+    const request = new NextRequest("http://localhost/api/providers/oauth/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "codex",
+        fileName: "codex_user@example.com.json",
+        fileContent: JSON.stringify({
+          type: "codex",
+          email: "user@example.com",
+          access_token: "token",
+        }),
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toBe("Forbidden");
+    expect(checkRateLimitWithPresetMock).not.toHaveBeenCalled();
+    expect(importOAuthCredentialMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for spoofed forwarded headers when request URL origin does not match", async () => {
+    await useRealValidateOrigin();
+
+    const { POST } = await import("./route");
+    const request = new NextRequest("https://internal.example.net/api/providers/oauth/import", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        origin: "https://dashboard.example.com",
+        "x-forwarded-host": "dashboard.example.com",
+        "x-forwarded-proto": "https",
+      },
+      body: JSON.stringify({
+        provider: "codex",
+        fileName: "codex_user@example.com.json",
+        fileContent: JSON.stringify({
+          type: "codex",
+          email: "user@example.com",
+          access_token: "token",
+        }),
+      }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toBe("Forbidden");
+    expect(checkRateLimitWithPresetMock).not.toHaveBeenCalled();
+    expect(importOAuthCredentialMock).not.toHaveBeenCalled();
   });
 
   it("accepts a codex bulk payload and returns per-item results", async () => {

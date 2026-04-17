@@ -185,7 +185,7 @@ export async function generateConfigBundle(userId: string, syncApiKey?: string |
     prisma.agentModelOverride.findUnique({ where: { userId } }),
     prisma.userApiKey.findFirst({
       where: { userId },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },
       select: { id: true, key: true },
     }),
     prisma.configSubscription.findUnique({
