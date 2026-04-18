@@ -907,6 +907,12 @@ else
     POSTGRES_PASSWORD=""
 fi
 
+# Registry-backed production compose defaults to published images in the normal
+# install path. Keep the installer contract minimal by exposing only tag
+# overrides through infrastructure/.env.
+DASHBOARD_IMAGE_TAG="latest"
+PERPLEXITY_SIDECAR_IMAGE_TAG="latest"
+
 if [ $PERPLEXITY_ENABLED -eq 1 ]; then
     PERPLEXITY_SIDECAR_SECRET=$(openssl rand -hex 32)
 fi
@@ -963,6 +969,12 @@ PROVIDER_ENCRYPTION_KEY=$PROVIDER_ENCRYPTION_KEY
 
 # Management API URL
 CLIPROXYAPI_MANAGEMENT_URL=http://cliproxyapi:8317/v0/management
+
+# Registry image tags
+# Override these only if you need a specific published release instead of the
+# default latest tag.
+DASHBOARD_IMAGE_TAG=$DASHBOARD_IMAGE_TAG
+PERPLEXITY_SIDECAR_IMAGE_TAG=$PERPLEXITY_SIDECAR_IMAGE_TAG
 
 # Installation directory (host path for volume mounts)
 INSTALL_DIR=$INSTALL_DIR

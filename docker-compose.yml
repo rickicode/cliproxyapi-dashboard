@@ -138,7 +138,7 @@ services:
   # Only starts when COMPOSE_PROFILES includes "perplexity"
   perplexity-sidecar:
     profiles: ["perplexity"]
-    build: ./perplexity-sidecar
+    image: ghcr.io/${GITHUB_REPO:-itsmylife44/cliproxyapi-dashboard}/perplexity-sidecar:${PERPLEXITY_SIDECAR_IMAGE_TAG:-latest}
     container_name: cliproxyapi-perplexity-sidecar
     restart: unless-stopped
     cpus: 0.5
@@ -164,8 +164,7 @@ services:
       start_period: 10s
 
   dashboard:
-    build:
-      context: ./dashboard
+    image: ghcr.io/${GITHUB_REPO:-itsmylife44/cliproxyapi-dashboard}/dashboard:${DASHBOARD_IMAGE_TAG:-latest}
     container_name: cliproxyapi-dashboard
     restart: unless-stopped
     cpus: 1.0
