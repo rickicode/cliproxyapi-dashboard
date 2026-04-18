@@ -52,6 +52,20 @@ Open **http://localhost:8318** → create admin account → done.
 
 > **Server deployment**: See the full [Installation Guide](docs/INSTALLATION.md).
 
+## Server Installation
+
+For a production/server install, use the interactive installer on Ubuntu 20.04+ or Debian 11+ with a domain or subdomains ready to point at the server.
+
+```bash
+git clone https://github.com/itsmylife44/cliproxyapi-dashboard.git
+cd cliproxyapi-dashboard
+sudo ./install.sh
+```
+
+The installer is interactive and asks about your domain/subdomains, reverse proxy mode, database mode, and optional Perplexity sidecar. Docker and Docker Compose are installed automatically if needed.
+
+See the [Installation Guide](docs/INSTALLATION.md) for the full walkthrough.
+
 ## Features
 
 - **Visual Configuration** — Manage CLIProxyAPIPlus settings through structured forms, no YAML editing
