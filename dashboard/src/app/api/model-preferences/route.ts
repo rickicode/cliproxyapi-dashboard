@@ -41,7 +41,17 @@ export async function PUT(request: NextRequest) {
       return originError;
     }
 
-    const body = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return Errors.validation("Invalid JSON body");
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return Errors.validation("Invalid request body");
+    }
+
     const validated = ModelPreferencesSchema.parse(body);
 
     const userExists = await prisma.user.findUnique({

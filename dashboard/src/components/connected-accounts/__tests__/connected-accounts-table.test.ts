@@ -11,6 +11,7 @@ const getSelectableConnectedAccountsActionKeys = (
 function createItem(overrides: Partial<OAuthListItem>): OAuthListItem {
   return {
     id: overrides.id ?? "oauth-1",
+    rowKey: overrides.rowKey ?? overrides.id ?? "oauth-1",
     actionKey: overrides.actionKey ?? overrides.id ?? "oauth-1",
     accountName: overrides.accountName ?? "account.json",
     accountEmail: overrides.accountEmail ?? "account@example.com",

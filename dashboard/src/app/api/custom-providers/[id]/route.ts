@@ -10,6 +10,7 @@ import { AUDIT_ACTION, extractIpAddress, logAuditAsync } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { syncCustomProviderToProxy } from "@/lib/providers/custom-provider-sync";
+import { providerMutex } from "@/lib/providers/management-api";
 import { Errors, apiSuccess } from "@/lib/errors";
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -292,41 +293,47 @@ export async function DELETE(
 
     if (secretKey) {
       try {
-        const getRes = await fetchWithTimeout(`${managementUrl}/openai-compatibility`, {
-          headers: { "Authorization": `Bearer ${secretKey}` }
-        });
-        
-        if (getRes.ok) {
-          const configData = (await getRes.json()) as Record<string, unknown>;
-          const openAiCompatibility = configData["openai-compatibility"];
-          const currentList: ManagementProviderEntry[] = Array.isArray(openAiCompatibility)
-            ? openAiCompatibility.filter(isManagementProviderEntry)
-            : [];
+        const release = await providerMutex.acquire("openai-compatibility");
 
-          const newList = currentList.filter((entry) => entry.name !== existingProvider.providerId);
-
-          const putRes = await fetchWithTimeout(`${managementUrl}/openai-compatibility`, {
-            method: "PUT",
-            headers: { 
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${secretKey}` 
-            },
-            body: JSON.stringify(newList)
+        try {
+          const getRes = await fetchWithTimeout(`${managementUrl}/openai-compatibility`, {
+            headers: { "Authorization": `Bearer ${secretKey}` }
           });
 
-          if (!putRes.ok) {
-            await putRes.body?.cancel();
+          if (getRes.ok) {
+            const configData = (await getRes.json()) as Record<string, unknown>;
+            const openAiCompatibility = configData["openai-compatibility"];
+            const currentList: ManagementProviderEntry[] = Array.isArray(openAiCompatibility)
+              ? openAiCompatibility.filter(isManagementProviderEntry)
+              : [];
+
+            const newList = currentList.filter((entry) => entry.name !== existingProvider.providerId);
+
+            const putRes = await fetchWithTimeout(`${managementUrl}/openai-compatibility`, {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${secretKey}`
+              },
+              body: JSON.stringify(newList)
+            });
+
+            if (!putRes.ok) {
+              await putRes.body?.cancel();
+              syncStatus = "failed";
+              syncMessage = "Backend sync failed - provider deleted but may still work temporarily";
+              logger.error({ statusCode: putRes.status }, "Failed to sync deleted custom provider to Management API");
+            } else {
+              invalidateProxyModelsCache();
+            }
+          } else {
+            await getRes.body?.cancel();
             syncStatus = "failed";
             syncMessage = "Backend sync failed - provider deleted but may still work temporarily";
-            logger.error({ statusCode: putRes.status }, "Failed to sync deleted custom provider to Management API");
-          } else {
-            invalidateProxyModelsCache();
+            logger.error({ statusCode: getRes.status }, "Failed to fetch current config from Management API");
           }
-        } else {
-          await getRes.body?.cancel();
-          syncStatus = "failed";
-          syncMessage = "Backend sync failed - provider deleted but may still work temporarily";
-          logger.error({ statusCode: getRes.status }, "Failed to fetch current config from Management API");
+        } finally {
+          release();
         }
       } catch (syncError) {
         syncStatus = "failed";

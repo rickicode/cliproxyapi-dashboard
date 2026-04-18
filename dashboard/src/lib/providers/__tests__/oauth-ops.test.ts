@@ -10,6 +10,8 @@ vi.mock("@/lib/db", () => ({
   prisma: {
     providerOAuthOwnership: {
       findMany: vi.fn(),
+      findUnique: vi.fn(),
+      delete: vi.fn(),
     },
   },
 }));
@@ -48,10 +50,12 @@ vi.mock("@/lib/providers/management-api", () => ({
 }));
 
 import {
+  bulkUpdateOAuthAccounts,
   buildCodexBulkImportFileContent,
   buildCodexBulkImportFileName,
   contributeOAuthAccount,
   importOAuthCredential,
+  listOAuthAccounts,
   listOAuthWithOwnership,
 } from "@/lib/providers/oauth-ops";
 import { fetchWithTimeout } from "@/lib/providers/management-api";
@@ -525,7 +529,9 @@ describe("listOAuthWithOwnership", () => {
   beforeEach(() => {
     vi.mocked(fetchWithTimeout).mockReset();
     vi.mocked(prisma.providerOAuthOwnership.findMany).mockReset();
+    vi.mocked(prisma.providerOAuthOwnership.findUnique).mockReset();
     vi.mocked(prisma.providerOAuthOwnership.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.providerOAuthOwnership.findUnique).mockResolvedValue(null);
   });
 
   it("accepts auth_files payloads from the management API", async () => {
@@ -663,5 +669,88 @@ describe("listOAuthWithOwnership", () => {
     });
 
     expect(prisma.providerOAuthOwnership.findMany).not.toHaveBeenCalled();
+  });
+
+  it("builds distinct action keys when providers share the same account name", async () => {
+    vi.mocked(fetchWithTimeout).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          files: [
+            {
+              id: "file-1",
+              name: "shared@example.com.json",
+              provider: "claude",
+              email: "shared@example.com",
+            },
+            {
+              id: "file-2",
+              name: "shared@example.com.json",
+              provider: "gemini",
+              email: "shared@example.com",
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+
+    await expect(
+      listOAuthAccounts("admin-1", true, {
+        q: "",
+        status: "all",
+        page: 1,
+        pageSize: 50,
+        preview: false,
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        items: [
+          expect.objectContaining({
+            accountName: "shared@example.com.json",
+            provider: "claude",
+            rowKey: "oauth-row:claude:shared%40example.com.json:file-1",
+            actionKey: "oauth:claude:shared%40example.com.json:file-1",
+          }),
+          expect.objectContaining({
+            accountName: "shared@example.com.json",
+            provider: "gemini",
+            rowKey: "oauth-row:gemini:shared%40example.com.json:file-2",
+            actionKey: "oauth:gemini:shared%40example.com.json:file-2",
+          }),
+        ],
+      },
+    });
+  });
+
+  it("preserves provider-scoped bulk targeting by forwarding account name and provider for fallback targeting", async () => {
+    vi.mocked(fetchWithTimeout).mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await expect(
+      bulkUpdateOAuthAccounts("admin-1", true, {
+        action: "disable",
+        actionKeys: ["oauth:claude:shared%40example.com.json:file-claude"],
+      })
+    ).resolves.toEqual({
+      ok: true,
+      summary: {
+        total: 1,
+        successCount: 1,
+        failureCount: 0,
+      },
+      failures: [],
+    });
+
+    expect(fetchWithTimeout).toHaveBeenCalledWith(
+      "http://localhost:8317/auth-files?name=shared%40example.com.json&provider=claude",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "shared@example.com.json",
+          provider: "claude",
+          disabled: true,
+        }),
+      })
+    );
   });
 });

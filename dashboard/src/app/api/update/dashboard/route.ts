@@ -3,6 +3,7 @@ import { verifySession } from "@/lib/auth/session";
 import { validateOrigin } from "@/lib/auth/origin";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { Errors } from "@/lib/errors";
 
 const WEBHOOK_HOST = process.env.WEBHOOK_HOST || "http://localhost:9000";
 const DEPLOY_SECRET = process.env.DEPLOY_SECRET || "";
@@ -35,8 +36,18 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
-    const { confirm } = body;
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return Errors.validation("Invalid JSON body");
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return Errors.validation("Invalid request body");
+    }
+
+    const { confirm } = body as { confirm?: unknown };
 
     if (confirm !== true) {
       return NextResponse.json(

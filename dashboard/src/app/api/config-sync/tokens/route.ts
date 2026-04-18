@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     // Fetch user's API key (most recent one)
     const userApiKey = await prisma.userApiKey.findFirst({
       where: { userId: session.userId },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },
       select: { id: true },
     });
 

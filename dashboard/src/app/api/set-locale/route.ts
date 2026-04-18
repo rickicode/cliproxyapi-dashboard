@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { supportedLocales, type Locale } from "@/i18n/config";
+import { validateOrigin } from "@/lib/auth/origin";
 import { verifySession } from "@/lib/auth/session";
 import { Errors } from "@/lib/errors";
 
@@ -10,12 +11,27 @@ export async function POST(request: NextRequest) {
     return Errors.unauthorized();
   }
 
+  const originError = validateOrigin(request);
+  if (originError) {
+    return originError;
+  }
+
   try {
-    const body = await request.json();
-    const locale = body.locale as string;
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return Errors.validation("Invalid JSON body");
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return Errors.validation("Invalid request body");
+    }
+
+    const { locale } = body as { locale?: unknown };
 
     // Validate locale
-    if (!supportedLocales.includes(locale as Locale)) {
+    if (typeof locale !== "string" || !supportedLocales.includes(locale as Locale)) {
       return NextResponse.json(
         { error: "Invalid locale" },
         { status: 400 }

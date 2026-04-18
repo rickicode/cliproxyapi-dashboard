@@ -107,6 +107,63 @@ interface AuthFileEntry {
   [key: string]: unknown;
 }
 
+interface AuthFileLookup {
+  fileName: string;
+  email: string;
+  provider: string;
+}
+
+function buildOwnershipLookupKey(provider: string, source: string): string {
+  return `${provider.toLowerCase()}|${source.toLowerCase()}`;
+}
+
+function addUnscopedOwnershipCandidate(lookup: Map<string, string | null>, source: string, userId: string) {
+  const normalizedSource = source.toLowerCase();
+  const existing = lookup.get(normalizedSource);
+
+  if (existing === undefined) {
+    lookup.set(normalizedSource, userId);
+    return;
+  }
+
+  if (existing !== userId) {
+    lookup.set(normalizedSource, null);
+  }
+}
+
+function addProviderScopedOwnershipCandidate(lookup: Map<string, string | null>, provider: string, source: string, userId: string) {
+  const key = buildOwnershipLookupKey(provider, source);
+  const existing = lookup.get(key);
+
+  if (existing === undefined) {
+    lookup.set(key, userId);
+    return;
+  }
+
+  if (existing !== userId) {
+    lookup.set(key, null);
+  }
+}
+
+function resolveOwnershipUserId(input: {
+  provider: string;
+  source: string;
+  providerScopedSourceToUser: Map<string, string | null>;
+  unscopedSourceToUser: Map<string, string | null>;
+}): string | null {
+  const normalizedSource = input.source.toLowerCase();
+  const normalizedProvider = input.provider.trim().toLowerCase();
+
+  if (normalizedProvider) {
+    const providerScoped = input.providerScopedSourceToUser.get(buildOwnershipLookupKey(normalizedProvider, normalizedSource));
+    if (providerScoped !== undefined) {
+      return providerScoped;
+    }
+  }
+
+  return input.unscopedSourceToUser.get(normalizedSource) ?? null;
+}
+
 function isCollectorAuthFileEntry(value: unknown): value is AuthFileEntry {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
@@ -352,7 +409,7 @@ export async function runUsageCollector(input: {
       return { ok: false, skipped: false, runId, reason: "proxy-service-unavailable", status: "error" };
     }
 
-    const authIndexToFile = new Map<string, { fileName: string; email: string }>();
+    const authIndexToFile = new Map<string, AuthFileLookup>();
     if (authFilesResponse?.ok) {
       try {
         const authFilesJson: unknown = await authFilesResponse.json();
@@ -365,6 +422,7 @@ export async function runUsageCollector(input: {
             authIndexToFile.set(entry.auth_index, {
               fileName: entry.file_name ?? "",
               email: entry.email ?? "",
+              provider: entry.provider ?? "",
             });
           }
         }
@@ -410,22 +468,39 @@ export async function runUsageCollector(input: {
         select: { id: true, key: true, userId: true },
       }),
       prisma.providerOAuthOwnership.findMany({
-        select: { accountName: true, accountEmail: true, userId: true },
+        select: { provider: true, accountName: true, accountEmail: true, userId: true },
       }),
       prisma.user.findMany({
         select: { id: true, username: true },
       }),
     ]);
 
-    const sourceToUser = new Map<string, string>();
+    const providerScopedSourceToUser = new Map<string, string | null>();
+    const unscopedSourceToUser = new Map<string, string | null>();
     for (const o of oauthOwnerships) {
+      const provider = o.provider?.trim().toLowerCase() ?? "";
+
       if (o.accountEmail) {
-        sourceToUser.set(o.accountEmail.toLowerCase(), o.userId);
+        const normalizedEmail = o.accountEmail.toLowerCase();
+        if (provider) {
+          addProviderScopedOwnershipCandidate(providerScopedSourceToUser, provider, normalizedEmail, o.userId);
+        }
+        addUnscopedOwnershipCandidate(unscopedSourceToUser, normalizedEmail, o.userId);
       }
-      sourceToUser.set(o.accountName.toLowerCase(), o.userId);
+
+      if (o.accountName) {
+        const normalizedName = o.accountName.toLowerCase();
+        if (provider) {
+          addProviderScopedOwnershipCandidate(providerScopedSourceToUser, provider, normalizedName, o.userId);
+        }
+        addUnscopedOwnershipCandidate(unscopedSourceToUser, normalizedName, o.userId);
+      }
     }
     for (const u of users) {
-      sourceToUser.set(u.username.toLowerCase(), u.id);
+      const normalizedUsername = u.username.toLowerCase();
+      if (!unscopedSourceToUser.has(normalizedUsername)) {
+        unscopedSourceToUser.set(normalizedUsername, u.id);
+      }
     }
 
     const fullKeyMap = new Map<string, { apiKeyId: string; userId: string }>();
@@ -492,17 +567,37 @@ export async function runUsageCollector(input: {
           if (!resolvedUserId) {
             const authFile = authIndexToFile.get(authIndex);
             if (authFile) {
-              const byFile = sourceToUser.get(authFile.fileName.toLowerCase());
+              const provider = authFile.provider.trim().toLowerCase();
+              const byFile = authFile.fileName
+                ? resolveOwnershipUserId({
+                    provider,
+                    source: authFile.fileName,
+                    providerScopedSourceToUser,
+                    unscopedSourceToUser,
+                  })
+                : null;
               if (byFile) {
                 resolvedUserId = byFile;
               } else if (authFile.email) {
-                resolvedUserId = sourceToUser.get(authFile.email.toLowerCase()) ?? null;
+                resolvedUserId = resolveOwnershipUserId({
+                  provider,
+                  source: authFile.email,
+                  providerScopedSourceToUser,
+                  unscopedSourceToUser,
+                });
               }
             }
           }
 
           if (!resolvedUserId && normalizedSource) {
-            resolvedUserId = sourceToUser.get(normalizedSource.toLowerCase()) ?? null;
+            const authFile = authIndexToFile.get(authIndex);
+            const provider = authFile?.provider.trim().toLowerCase() ?? "";
+            resolvedUserId = resolveOwnershipUserId({
+              provider,
+              source: normalizedSource,
+              providerScopedSourceToUser,
+              unscopedSourceToUser,
+            });
           }
 
           if (!resolvedApiKeyId) {

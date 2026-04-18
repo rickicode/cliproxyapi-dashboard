@@ -24,6 +24,7 @@ interface ConfigSubscriberProps {
 
 export function ConfigSubscriber({ hasApiKey }: ConfigSubscriberProps) {
   const [status, setStatus] = useState<SubscriptionStatus | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [shareCode, setShareCode] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
@@ -31,19 +32,19 @@ export function ConfigSubscriber({ hasApiKey }: ConfigSubscriberProps) {
   const { showToast } = useToast();
   const locale = useLocale();
   const t = useTranslations('configSharing');
+  const commonT = useTranslations('common');
 
   const fetchStatus = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await fetch(API_ENDPOINTS.CONFIG_SHARING.SUBSCRIBE);
       if (res.status === 404 || res.status === 204) {
         setStatus(null);
-        setLoading(false);
         return;
       }
       if (!res.ok) {
-        setStatus(null);
-        setLoading(false);
+        setLoadError(t('toastNetworkError'));
         return;
       }
       const data = await res.json();
@@ -53,7 +54,7 @@ export function ConfigSubscriber({ hasApiKey }: ConfigSubscriberProps) {
         setStatus(data);
       }
     } catch {
-      setStatus(null);
+      setLoadError(t('toastNetworkError'));
     } finally {
       setLoading(false);
     }
@@ -182,6 +183,21 @@ export function ConfigSubscriber({ hasApiKey }: ConfigSubscriberProps) {
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {loadError && (
+            <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+              <p className="text-sm text-red-700/90">{loadError}</p>
+              <Button
+                onClick={() => void fetchStatus()}
+                disabled={loading}
+                variant="secondary"
+                className="shrink-0"
+              >
+                {commonT('tryAgain')}
+              </Button>
+            </div>
+          )}
+
+          {loadError ? null : (
           <div className="space-y-4">
             <p className="text-sm text-[var(--text-secondary)]">{t('subscribeDescription')}</p>
 
@@ -217,6 +233,7 @@ export function ConfigSubscriber({ hasApiKey }: ConfigSubscriberProps) {
               </Button>
             </div>
           </div>
+          )}
         </CardContent>
       </Card>
     );

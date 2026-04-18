@@ -1,11 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { validateOrigin } from "@/lib/auth/origin";
 import { verifySession } from "@/lib/auth/session";
 import { resyncCustomProviders } from "@/lib/providers/resync";
 import { Errors } from "@/lib/errors";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   const session = await verifySession();
   if (!session) return Errors.unauthorized();
+
+  const originError = validateOrigin(request);
+  if (originError) return originError;
 
   const results = await resyncCustomProviders(session.userId);
 

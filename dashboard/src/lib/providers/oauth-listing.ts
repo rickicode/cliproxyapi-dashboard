@@ -1,6 +1,7 @@
 import type { OAuthAccountWithOwnership } from "@/lib/providers/management-api";
 
 export interface OAuthListItem extends OAuthAccountWithOwnership {
+  rowKey: string;
   actionKey: string;
   canToggle: boolean;
   canDelete: boolean;

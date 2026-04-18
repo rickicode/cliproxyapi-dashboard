@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { getThemeBootstrapScript } from "@/lib/theme-script";
-import { PublicThemeToggle } from "@/components/public-theme-toggle";
 
 const FALLBACK_COPY = {
   fatalError: "Fatal Error",
@@ -25,7 +24,6 @@ export default function GlobalError({
         <script>{getThemeBootstrapScript()}</script>
       </head>
       <body className="min-h-screen antialiased">
-        <PublicThemeToggle />
         <main id="main-content" className="flex min-h-screen items-center justify-center px-4">
           <div className="w-full max-w-md space-y-6 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-base)] p-8">
             <div className="flex flex-col items-center space-y-4 text-center">

@@ -169,6 +169,56 @@ export function summarizeBulkOAuthAction(
   };
 }
 
+function buildOAuthActionKey(provider: string, accountName: string): string {
+  return `oauth:${encodeURIComponent(provider)}:${encodeURIComponent(accountName)}`;
+}
+
+function buildOAuthRowKey(provider: string, accountName: string, id: string): string {
+  return `oauth-row:${encodeURIComponent(provider)}:${encodeURIComponent(accountName)}:${encodeURIComponent(id)}`;
+}
+
+function buildScopedOAuthActionKey(provider: string, accountName: string, id: string): string {
+  return `${buildOAuthActionKey(provider, accountName)}:${encodeURIComponent(id)}`;
+}
+
+interface OAuthActionTarget {
+  idOrName: string;
+  provider?: string;
+  accountName?: string;
+}
+
+function resolveOAuthActionTarget(actionKey: string): OAuthActionTarget {
+  if (!actionKey.startsWith("oauth:")) {
+    return { idOrName: actionKey };
+  }
+
+  const segments = actionKey.split(":");
+  if (segments.length < 4) {
+    return { idOrName: actionKey };
+  }
+
+  try {
+    return {
+      provider: decodeURIComponent(segments[1] ?? ""),
+      accountName: decodeURIComponent(segments[2] ?? ""),
+      idOrName: decodeURIComponent(segments.slice(3).join(":")),
+    };
+  } catch {
+    return { idOrName: actionKey };
+  }
+}
+
+function buildOAuthManagementQuery(target: OAuthActionTarget, fallbackAccountName: string): string {
+  const params = new URLSearchParams();
+  params.set("name", target.accountName ?? fallbackAccountName);
+
+  if (target.provider) {
+    params.set("provider", target.provider);
+  }
+
+  return params.toString();
+}
+
 export async function listOAuthAccounts(userId: string, isAdmin: boolean, query: OAuthListQuery) {
   const result = await listOAuthWithOwnership(userId, isAdmin);
 
@@ -178,7 +228,8 @@ export async function listOAuthAccounts(userId: string, isAdmin: boolean, query:
 
   const rows: OAuthListItem[] = result.accounts.map((row) => ({
     ...row,
-    actionKey: row.isOwn || isAdmin ? row.accountName : "",
+    rowKey: buildOAuthRowKey(row.provider, row.accountName, row.id),
+    actionKey: row.isOwn || isAdmin ? buildScopedOAuthActionKey(row.provider, row.accountName, row.id) : "",
     canToggle: row.isOwn || isAdmin,
     canDelete: row.isOwn || isAdmin,
     canClaim: Boolean(isAdmin && !row.ownerUserId && row.accountName && (row.isOwn || isAdmin)),
@@ -203,18 +254,21 @@ export async function bulkUpdateOAuthAccounts(
       continue;
     }
 
+    const actionTarget = resolveOAuthActionTarget(actionKey);
+
     let result:
       | RemoveOAuthResult
       | ToggleOAuthResult;
 
     if (input.action === "disconnect") {
-      result = await removeOAuthAccountByIdOrName(userId, actionKey, isAdmin);
+      result = await removeOAuthAccountByIdOrName(userId, actionTarget.idOrName, isAdmin, actionTarget);
     } else {
       result = await toggleOAuthAccountByIdOrName(
         userId,
-        actionKey,
+        actionTarget.idOrName,
         input.action === "disable",
-        isAdmin
+        isAdmin,
+        actionTarget
       );
     }
 
@@ -762,7 +816,8 @@ export async function removeOAuthAccount(
 export async function removeOAuthAccountByIdOrName(
   userId: string,
   idOrName: string,
-  isAdmin: boolean
+  isAdmin: boolean,
+  actionTarget?: OAuthActionTarget
 ): Promise<RemoveOAuthResult> {
   if (!MANAGEMENT_API_KEY) {
     return { ok: false, error: "Management API key not configured" };
@@ -787,7 +842,7 @@ export async function removeOAuthAccountByIdOrName(
       }
     }
 
-     const endpoint = `${MANAGEMENT_BASE_URL}/auth-files?name=${encodeURIComponent(resolved.accountName)}`;
+     const endpoint = `${MANAGEMENT_BASE_URL}/auth-files?${buildOAuthManagementQuery(actionTarget ?? { idOrName }, resolved.accountName)}`;
 
      let deleteRes: Response;
      try {
@@ -838,7 +893,8 @@ export async function toggleOAuthAccountByIdOrName(
   userId: string,
   idOrName: string,
   disabled: boolean,
-  isAdmin: boolean
+  isAdmin: boolean,
+  actionTarget?: OAuthActionTarget
 ): Promise<ToggleOAuthResult> {
   if (!MANAGEMENT_API_KEY) {
     return { ok: false, error: "Management API key not configured" };
@@ -863,7 +919,7 @@ export async function toggleOAuthAccountByIdOrName(
       }
     }
 
-    const endpoint = `${MANAGEMENT_BASE_URL}/auth-files?name=${encodeURIComponent(resolved.accountName)}`;
+    const endpoint = `${MANAGEMENT_BASE_URL}/auth-files?${buildOAuthManagementQuery(actionTarget ?? { idOrName }, resolved.accountName)}`;
 
     let postRes: Response;
     try {
@@ -874,7 +930,8 @@ export async function toggleOAuthAccountByIdOrName(
           Authorization: `Bearer ${MANAGEMENT_API_KEY}`,
         },
         body: JSON.stringify({
-          name: resolved.accountName,
+          name: actionTarget?.accountName ?? resolved.accountName,
+          ...(actionTarget?.provider ? { provider: actionTarget.provider } : {}),
           disabled,
         }),
       });

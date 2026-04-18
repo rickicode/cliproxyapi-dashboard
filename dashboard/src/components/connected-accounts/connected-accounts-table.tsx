@@ -77,7 +77,7 @@ export function ConnectedAccountsTable({
             const isLoading = loadingActionKey === item.actionKey;
 
             return (
-              <tr key={item.actionKey} className="border-b border-[var(--surface-border)] last:border-b-0">
+              <tr key={item.rowKey} className="border-b border-[var(--surface-border)] last:border-b-0">
                 <td className="p-3 align-top">
                   <input
                     type="checkbox"

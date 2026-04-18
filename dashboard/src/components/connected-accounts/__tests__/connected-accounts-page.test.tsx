@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import React from "react";
 
 const {
   mockUseTranslations,
@@ -7,12 +8,14 @@ const {
   mockUsePathname,
   mockUseSearchParams,
   mockUseToast,
+  capturedTableProps,
 } = vi.hoisted(() => ({
   mockUseTranslations: vi.fn(),
   mockUseRouter: vi.fn(),
   mockUsePathname: vi.fn(),
   mockUseSearchParams: vi.fn(),
   mockUseToast: vi.fn(),
+  capturedTableProps: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("next-intl", () => ({
@@ -45,7 +48,10 @@ vi.mock("@/components/connected-accounts/connected-accounts-bulk-bar", () => ({
 }));
 
 vi.mock("@/components/connected-accounts/connected-accounts-table", () => ({
-  ConnectedAccountsTable: () => <div>TABLE_RENDERED</div>,
+  ConnectedAccountsTable: (props: Record<string, unknown>) => {
+    capturedTableProps.push(props);
+    return <div>TABLE_RENDERED</div>;
+  },
   getSelectableConnectedAccountsActionKeys: () => [],
 }));
 
@@ -80,6 +86,7 @@ const baseQuery: ConnectedAccountsQueryState = {
 
 afterEach(() => {
   vi.clearAllMocks();
+  capturedTableProps.length = 0;
 });
 
 mockUseTranslations.mockImplementation((namespace: string) => (key: string) => {
@@ -325,6 +332,148 @@ describe("Connected Accounts page helpers", () => {
     } as ConnectedAccountsQueryState & { fetchImpl?: typeof fetch; signal: AbortSignal });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes distinct provider-scoped action keys to the table when account names collide", () => {
+    renderToStaticMarkup(
+      <ConnectedAccountsPage
+        initialState={{
+          data: {
+            items: [
+              {
+                id: "oauth-1",
+                rowKey: "oauth-row:claude:shared%40example.com.json:oauth-1",
+                actionKey: "oauth:claude:shared%40example.com.json:oauth-1",
+                accountName: "shared@example.com.json",
+                accountEmail: "shared@example.com",
+                provider: "claude",
+                ownerUsername: "ricki",
+                ownerUserId: "user-1",
+                isOwn: true,
+                status: "active",
+                statusMessage: null,
+                unavailable: false,
+                canToggle: true,
+                canDelete: true,
+                canClaim: false,
+              },
+              {
+                id: "oauth-2",
+                rowKey: "oauth-row:gemini:shared%40example.com.json:oauth-2",
+                actionKey: "oauth:gemini:shared%40example.com.json:oauth-2",
+                accountName: "shared@example.com.json",
+                accountEmail: "shared@example.com",
+                provider: "gemini",
+                ownerUsername: "ricki",
+                ownerUserId: "user-1",
+                isOwn: true,
+                status: "disabled",
+                statusMessage: null,
+                unavailable: false,
+                canToggle: true,
+                canDelete: true,
+                canClaim: false,
+              },
+            ],
+            page: 1,
+            pageSize: 50,
+            total: 2,
+            totalPages: 1,
+            availableStatuses: ["active", "disabled"],
+          },
+          loading: false,
+          loadError: null,
+          selectedActionKeys: ["oauth:gemini:shared%40example.com.json:oauth-2"],
+          loadingActionKey: "oauth:claude:shared%40example.com.json:oauth-1",
+          loadingBulkAction: null,
+        }}
+      />
+    );
+
+    expect(capturedTableProps).toHaveLength(1);
+    expect(capturedTableProps[0]).toMatchObject({
+      selectedActionKeys: ["oauth:gemini:shared%40example.com.json:oauth-2"],
+      loadingActionKey: "oauth:claude:shared%40example.com.json:oauth-1",
+      items: [
+        expect.objectContaining({
+          provider: "claude",
+          accountName: "shared@example.com.json",
+          rowKey: "oauth-row:claude:shared%40example.com.json:oauth-1",
+          actionKey: "oauth:claude:shared%40example.com.json:oauth-1",
+        }),
+        expect.objectContaining({
+          provider: "gemini",
+          accountName: "shared@example.com.json",
+          rowKey: "oauth-row:gemini:shared%40example.com.json:oauth-2",
+          actionKey: "oauth:gemini:shared%40example.com.json:oauth-2",
+        }),
+      ],
+    });
+  });
+
+  it("still passes distinct stable row identities to the table for duplicate non-actionable masked names", () => {
+    renderToStaticMarkup(
+      <ConnectedAccountsPage
+        initialState={{
+          data: {
+            items: [
+              {
+                id: "masked-1",
+                rowKey: "oauth-row:claude:Account%201:masked-1",
+                actionKey: "",
+                accountName: "Account 1",
+                accountEmail: null,
+                provider: "claude",
+                ownerUsername: null,
+                ownerUserId: null,
+                isOwn: false,
+                status: "active",
+                statusMessage: null,
+                unavailable: false,
+                canToggle: false,
+                canDelete: false,
+                canClaim: false,
+              },
+              {
+                id: "masked-2",
+                rowKey: "oauth-row:gemini:Account%201:masked-2",
+                actionKey: "",
+                accountName: "Account 1",
+                accountEmail: null,
+                provider: "gemini",
+                ownerUsername: null,
+                ownerUserId: null,
+                isOwn: false,
+                status: "active",
+                statusMessage: null,
+                unavailable: false,
+                canToggle: false,
+                canDelete: false,
+                canClaim: false,
+              },
+            ],
+            page: 1,
+            pageSize: 50,
+            total: 2,
+            totalPages: 1,
+            availableStatuses: ["active"],
+          },
+          loading: false,
+          loadError: null,
+          selectedActionKeys: [],
+          loadingActionKey: null,
+          loadingBulkAction: null,
+        }}
+      />
+    );
+
+    expect(capturedTableProps).toHaveLength(1);
+    expect(capturedTableProps[0]).toMatchObject({
+      items: [
+        expect.objectContaining({ id: "masked-1", rowKey: "oauth-row:claude:Account%201:masked-1", actionKey: "" }),
+        expect.objectContaining({ id: "masked-2", rowKey: "oauth-row:gemini:Account%201:masked-2", actionKey: "" }),
+      ],
+    });
   });
 
   it("ignores stale older responses when a newer request is current", async () => {

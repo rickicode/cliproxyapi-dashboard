@@ -65,6 +65,7 @@ describe("buildOAuthListResponse", () => {
   const rows = [
     {
       id: "auth-1",
+      rowKey: "auth-1",
       accountName: "claude_user@example.com.json",
       accountEmail: "user@example.com",
       provider: "claude",
@@ -81,6 +82,7 @@ describe("buildOAuthListResponse", () => {
     },
     {
       id: "auth-2",
+      rowKey: "auth-2",
       accountName: "cursor_other@example.com.json",
       accountEmail: "other@example.com",
       provider: "cursor",
@@ -97,6 +99,7 @@ describe("buildOAuthListResponse", () => {
     },
     {
       id: "auth-3",
+      rowKey: "auth-3",
       accountName: "review_bot@example.com.json",
       accountEmail: "review@example.com",
       provider: "gemini",
@@ -182,6 +185,7 @@ describe("buildOAuthListResponse", () => {
     const pageRows = Array.from({ length: 25 }, (_, index) => ({
       ...rows[0],
       id: `page-${index + 1}`,
+      rowKey: `page-${index + 1}`,
       accountName: `account-${index + 1}.json`,
       actionKey: `account-${index + 1}.json`,
     }));
@@ -207,6 +211,7 @@ describe("buildOAuthListResponse", () => {
     const previewRows = Array.from({ length: 12 }, (_, index) => ({
       ...rows[0],
       id: `preview-${index + 1}`,
+      rowKey: `preview-${index + 1}`,
       accountName: `preview-${index + 1}.json`,
       actionKey: `preview-${index + 1}.json`,
     }));
@@ -307,7 +312,8 @@ describe("listOAuthAccounts", () => {
       expect.objectContaining({
         id: "mgmt-1",
         accountName: "owned@example.com.json",
-        actionKey: "owned@example.com.json",
+        actionKey: "oauth:claude:owned%40example.com.json:mgmt-1",
+        rowKey: "oauth-row:claude:owned%40example.com.json:mgmt-1",
         canToggle: true,
         canDelete: true,
         canClaim: false,
@@ -390,21 +396,21 @@ describe("listOAuthAccounts", () => {
     expect(adminResult.data.items).toEqual([
       expect.objectContaining({
         accountName: "owned@example.com.json",
-        actionKey: "owned@example.com.json",
+        actionKey: "oauth:claude:owned%40example.com.json:mgmt-1",
         canToggle: true,
         canDelete: true,
         canClaim: false,
       }),
       expect.objectContaining({
         accountName: "unclaimed@example.com.json",
-        actionKey: "unclaimed@example.com.json",
+        actionKey: "oauth:cursor:unclaimed%40example.com.json:mgmt-2",
         canToggle: true,
         canDelete: true,
         canClaim: true,
       }),
       expect.objectContaining({
         accountName: "teammate@example.com.json",
-        actionKey: "teammate@example.com.json",
+        actionKey: "oauth:gemini:teammate%40example.com.json:mgmt-3",
         canToggle: true,
         canDelete: true,
         canClaim: false,

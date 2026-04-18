@@ -113,8 +113,18 @@ function buildAuthFilesResponse() {
           auth_index: "auth-1",
           file_name: "tester@example.com",
           email: "tester@example.com",
+          provider: "openai",
         },
       ],
+    }),
+    { status: 200 }
+  );
+}
+
+function buildAuthFilesResponseWithEntries(entries: Array<Record<string, unknown>>) {
+  return new Response(
+    JSON.stringify({
+      auth_files: entries,
     }),
     { status: 200 }
   );
@@ -777,6 +787,167 @@ describe("runUsageCollector", () => {
             userId: "user-1",
             apiKeyId: null,
             authIndex: "auth-1",
+          }),
+        ],
+      })
+    );
+  });
+
+  it("prefers provider-scoped ownership when account identifiers collide across providers", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(buildUsageResponse({ source: "shared@example.com", auth_index: "auth-provider" }))
+      .mockResolvedValueOnce(
+        buildAuthFilesResponseWithEntries([
+          {
+            auth_index: "auth-provider",
+            file_name: "shared@example.com",
+            email: "shared@example.com",
+            provider: "anthropic",
+          },
+        ])
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    mockPrisma.providerOAuthOwnership.findMany.mockResolvedValue([
+      {
+        accountName: "shared@example.com",
+        accountEmail: "shared@example.com",
+        provider: "anthropic",
+        userId: "user-anthropic",
+      },
+      {
+        accountName: "shared@example.com",
+        accountEmail: "shared@example.com",
+        provider: "openai",
+        userId: "user-openai",
+      },
+    ]);
+    mockPrisma.user.findMany.mockResolvedValue([]);
+
+    const { runUsageCollector } = await import("@/lib/usage/collector");
+
+    await expect(runUsageCollector({ trigger: "scheduler" })).resolves.toMatchObject({
+      ok: true,
+      skipped: false,
+      processed: 1,
+      stored: 1,
+    });
+
+    expect(mockPrisma.usageRecord.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            authIndex: "auth-provider",
+            source: "shared@example.com",
+            userId: "user-anthropic",
+          }),
+        ],
+      })
+    );
+  });
+
+  it("leaves same-provider ownership collisions unresolved", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(buildUsageResponse({ source: "shared@example.com", auth_index: "auth-same-provider" }))
+      .mockResolvedValueOnce(
+        buildAuthFilesResponseWithEntries([
+          {
+            auth_index: "auth-same-provider",
+            file_name: "shared@example.com",
+            email: "shared@example.com",
+            provider: "anthropic",
+          },
+        ])
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    mockPrisma.providerOAuthOwnership.findMany.mockResolvedValue([
+      {
+        accountName: "shared@example.com",
+        accountEmail: "shared@example.com",
+        provider: "anthropic",
+        userId: "user-anthropic-1",
+      },
+      {
+        accountName: "shared@example.com",
+        accountEmail: "shared@example.com",
+        provider: "anthropic",
+        userId: "user-anthropic-2",
+      },
+    ]);
+    mockPrisma.user.findMany.mockResolvedValue([]);
+
+    const { runUsageCollector } = await import("@/lib/usage/collector");
+
+    await expect(runUsageCollector({ trigger: "scheduler" })).resolves.toMatchObject({
+      ok: true,
+      skipped: false,
+      processed: 1,
+      stored: 1,
+    });
+
+    expect(mockPrisma.usageRecord.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            authIndex: "auth-same-provider",
+            source: "shared@example.com",
+            userId: null,
+          }),
+        ],
+      })
+    );
+  });
+
+  it("keeps ambiguous providerless oauth attribution unresolved even after username population", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(buildUsageResponse({ source: "shared@example.com", auth_index: "auth-providerless" }))
+      .mockResolvedValueOnce(
+        buildAuthFilesResponseWithEntries([
+          {
+            auth_index: "auth-providerless",
+            file_name: "shared@example.com",
+            email: "shared@example.com",
+          },
+        ])
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    mockPrisma.providerOAuthOwnership.findMany.mockResolvedValue([
+      {
+        accountName: "shared@example.com",
+        accountEmail: "shared@example.com",
+        provider: "anthropic",
+        userId: "user-oauth-1",
+      },
+      {
+        accountName: "shared@example.com",
+        accountEmail: "shared@example.com",
+        provider: "openai",
+        userId: "user-oauth-2",
+      },
+    ]);
+    mockPrisma.user.findMany.mockResolvedValue([{ id: "user-oauth-1", username: "shared@example.com" }]);
+
+    const { runUsageCollector } = await import("@/lib/usage/collector");
+
+    await expect(runUsageCollector({ trigger: "scheduler" })).resolves.toMatchObject({
+      ok: true,
+      skipped: false,
+      processed: 1,
+      stored: 1,
+    });
+
+    expect(mockPrisma.usageRecord.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            authIndex: "auth-providerless",
+            source: "shared@example.com",
+            userId: null,
           }),
         ],
       })
