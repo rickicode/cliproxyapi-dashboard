@@ -22,6 +22,25 @@ import { inferOAuthProviderFromIdentifiers, isMeaningfulProviderValue } from "./
 import { resolveOAuthOwnership } from "./oauth-ownership-resolver";
 import { parseAuthFilesResponse } from "./auth-files";
 
+const OAUTH_PROVIDER_ALIASES: Record<string, string> = {
+  anthropic: "claude",
+  claude: "claude",
+  gemini: "gemini-cli",
+  "gemini-cli": "gemini-cli",
+  openai: "codex",
+  codex: "codex",
+  github: "copilot",
+  "github-copilot": "copilot",
+  copilot: "copilot",
+  antigravity: "antigravity",
+  iflow: "iflow",
+  qwen: "qwen",
+  kimi: "kimi",
+  kiro: "kiro",
+  cursor: "cursor",
+  codebuddy: "codebuddy",
+};
+
 export interface BulkImportOAuthCredentialItemResult {
   email: string;
   ok: boolean;
@@ -83,6 +102,31 @@ interface OAuthListAuthFileEntry {
   status?: string;
   status_message?: string;
   unavailable?: boolean;
+}
+
+function normalizeOAuthProviderAlias(provider: string | undefined): string | null {
+  if (typeof provider !== "string") {
+    return null;
+  }
+
+  const normalized = provider.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  return OAUTH_PROVIDER_ALIASES[normalized] ?? normalized;
+}
+
+function buildAuthFileScopeKey(file: AuthFilePollEntry, fallbackProvider?: string): string {
+  const normalizedProvider = normalizeOAuthProviderAlias(file.provider)
+    ?? normalizeOAuthProviderAlias(file.type)
+    ?? normalizeOAuthProviderAlias(
+      inferOAuthProviderFromIdentifiers(undefined, file.name, file.email)
+        ?? fallbackProvider
+    )
+    ?? "";
+
+  return `${normalizedProvider}:${file.name}`;
 }
 
 const sanitizeAuthFilePollEntry = (entry: unknown): AuthFilePollEntry | null => {
@@ -187,6 +231,10 @@ interface OAuthActionTarget {
   accountName?: string;
 }
 
+function canonicalizeOAuthProvider(provider: string | undefined): string | undefined {
+  return normalizeOAuthProviderAlias(provider) ?? undefined;
+}
+
 function resolveOAuthActionTarget(actionKey: string): OAuthActionTarget {
   if (!actionKey.startsWith("oauth:")) {
     return { idOrName: actionKey };
@@ -199,7 +247,7 @@ function resolveOAuthActionTarget(actionKey: string): OAuthActionTarget {
 
   try {
     return {
-      provider: decodeURIComponent(segments[1] ?? ""),
+      provider: canonicalizeOAuthProvider(decodeURIComponent(segments[1] ?? "")),
       accountName: decodeURIComponent(segments[2] ?? ""),
       idOrName: decodeURIComponent(segments.slice(3).join(":")),
     };
@@ -212,8 +260,9 @@ function buildOAuthManagementQuery(target: OAuthActionTarget, fallbackAccountNam
   const params = new URLSearchParams();
   params.set("name", target.accountName ?? fallbackAccountName);
 
-  if (target.provider) {
-    params.set("provider", target.provider);
+  const canonicalProvider = canonicalizeOAuthProvider(target.provider);
+  if (canonicalProvider) {
+    params.set("provider", canonicalProvider);
   }
 
   return params.toString();
@@ -351,7 +400,7 @@ export async function importOAuthCredential(
 
   try {
     const cleanupUploadedAuthFile = async (accountName: string): Promise<void> => {
-      const deleteEndpoint = `${MANAGEMENT_BASE_URL}/auth-files?name=${encodeURIComponent(accountName)}`;
+      const deleteEndpoint = `${MANAGEMENT_BASE_URL}/auth-files?name=${encodeURIComponent(accountName)}&provider=${encodeURIComponent(provider)}`;
 
       try {
         const deleteRes = await fetchWithTimeout(deleteEndpoint, {
@@ -417,7 +466,7 @@ export async function importOAuthCredential(
         if (snapshot) {
           preUploadSnapshotSucceeded = true;
           for (const file of snapshot.files) {
-            preExistingNames.add(file.name);
+            preExistingNames.add(buildAuthFileScopeKey(file, provider));
           }
         }
       } else {
@@ -492,7 +541,7 @@ export async function importOAuthCredential(
       const { files, hasMalformedEntries } = pollSnapshot;
 
       // Only consider files that did NOT exist before our upload
-      const newFiles = files.filter((file) => !preExistingNames.has(file.name));
+      const newFiles = files.filter((file) => !preExistingNames.has(buildAuthFileScopeKey(file, provider)));
 
       const requestedBaseName = fileName.replace(/\.json$/i, "");
 
@@ -508,8 +557,15 @@ export async function importOAuthCredential(
       let fallbackFile: (typeof newFiles)[number] | null = null;
       if (!matchingFile && preUploadSnapshotSucceeded && !hasMalformedEntries) {
         const providerMatches = newFiles.filter((file) => {
-          const fileProvider = (file.provider || file.type || "").toLowerCase();
-          return fileProvider === provider.toLowerCase();
+          const fileProvider = canonicalizeOAuthProvider(
+            isMeaningfulProviderValue(file.provider)
+              ? file.provider
+              : isMeaningfulProviderValue(file.type)
+                ? file.type
+                : undefined
+          );
+
+          return fileProvider === canonicalizeOAuthProvider(provider);
         });
         if (providerMatches.length === 1) {
           fallbackFile = providerMatches[0];
@@ -675,17 +731,31 @@ export async function listOAuthWithOwnership(
       return { ok: false, error: "Invalid Management API response for OAuth accounts" };
     }
 
-    const accountNames = authFiles.map((file) => file.name);
+    const accountIdentifiers = authFiles.map((file) => ({
+      provider:
+        canonicalizeOAuthProvider(
+          (isMeaningfulProviderValue(file.provider) ? file.provider :
+            isMeaningfulProviderValue(file.type) ? file.type :
+              inferOAuthProviderFromIdentifiers(file.id, file.name, file.email)) || "unknown"
+        ) || "unknown",
+      accountName: file.name,
+    }));
 
     const ownerships = await prisma.providerOAuthOwnership.findMany({
-      where: { accountName: { in: accountNames } },
+      where: {
+        OR: accountIdentifiers.map(({ provider, accountName }) => ({ provider, accountName })),
+      },
       include: { user: { select: { id: true, username: true } } },
     });
 
-    const ownershipMap = new Map(ownerships.map((o) => [o.accountName, o]));
+    const ownershipMap = new Map(ownerships.map((o) => [`${o.provider}:${o.accountName}`, o]));
 
      const accountsWithOwnership: OAuthAccountWithOwnership[] = authFiles.map((file, index) => {
-       const ownership = ownershipMap.get(file.name);
+       const provider =
+         (isMeaningfulProviderValue(file.provider) ? file.provider :
+           isMeaningfulProviderValue(file.type) ? file.type :
+             inferOAuthProviderFromIdentifiers(file.id, file.name, file.email)) || "unknown";
+       const ownership = ownershipMap.get(`${canonicalizeOAuthProvider(provider) || provider}:${file.name}`);
        const isOwn = ownership?.userId === userId;
        const canSeeDetails = isOwn || isAdmin;
 
@@ -693,10 +763,7 @@ export async function listOAuthWithOwnership(
          id: canSeeDetails ? file.id : `account-${index + 1}`,
          accountName: canSeeDetails ? file.name : `Account ${index + 1}`,
          accountEmail: canSeeDetails ? file.email || null : null,
-         provider:
-           (isMeaningfulProviderValue(file.provider) ? file.provider :
-             isMeaningfulProviderValue(file.type) ? file.type :
-               inferOAuthProviderFromIdentifiers(file.id, file.name, file.email)) || "unknown",
+         provider,
          ownerUsername: canSeeDetails ? ownership?.user.username || null : null,
          ownerUserId: canSeeDetails ? ownership?.user.id || null : null,
          isOwn,
@@ -722,7 +789,8 @@ interface ResolveOAuthResult {
 }
 
 async function resolveOAuthAccountByIdOrName(
-  idOrName: string
+  idOrName: string,
+  actionTarget?: OAuthActionTarget
 ): Promise<ResolveOAuthResult> {
   // First try to find by DB ID (CUID)
   const byId = await prisma.providerOAuthOwnership.findUnique({
@@ -737,10 +805,17 @@ async function resolveOAuthAccountByIdOrName(
   }
 
   // Try to find by accountName (management API file ID)
-  const byName = await prisma.providerOAuthOwnership.findUnique({
-    where: { accountName: idOrName },
-    select: { id: true, userId: true, accountName: true },
-  });
+  const byName = actionTarget?.provider
+    ? await prisma.providerOAuthOwnership.findUnique({
+      where: {
+        provider_accountName: {
+          provider: canonicalizeOAuthProvider(actionTarget.provider) ?? actionTarget.provider,
+          accountName: actionTarget.accountName ?? idOrName,
+        },
+      },
+      select: { id: true, userId: true, accountName: true },
+    })
+    : null;
 
   if (byName) {
     return {
@@ -757,6 +832,7 @@ async function resolveOAuthAccountByIdOrName(
 
 export async function removeOAuthAccount(
   userId: string,
+  provider: string,
   accountName: string,
   isAdmin: boolean
 ): Promise<RemoveOAuthResult> {
@@ -766,14 +842,19 @@ export async function removeOAuthAccount(
 
   try {
     const ownership = await prisma.providerOAuthOwnership.findUnique({
-      where: { accountName },
+      where: {
+        provider_accountName: {
+          provider,
+          accountName,
+        },
+      },
     });
 
     if (ownership && !isAdmin && ownership.userId !== userId) {
       return { ok: false, error: "Access denied" };
     }
 
-     const endpoint = `${MANAGEMENT_BASE_URL}/auth-files?name=${encodeURIComponent(accountName)}`;
+     const endpoint = `${MANAGEMENT_BASE_URL}/auth-files?name=${encodeURIComponent(accountName)}&provider=${encodeURIComponent(provider)}`;
 
      let deleteRes: Response;
      try {
@@ -800,12 +881,12 @@ export async function removeOAuthAccount(
       }
 
     if (ownership) {
-      await prisma.providerOAuthOwnership.delete({ where: { accountName } });
+      await prisma.providerOAuthOwnership.delete({ where: { id: ownership.id } });
     }
 
     return { ok: true };
   } catch (error) {
-    logger.error({ err: error, accountName }, "removeOAuthAccount error");
+    logger.error({ err: error, provider, accountName }, "removeOAuthAccount error");
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Unknown error during OAuth removal",
@@ -824,7 +905,7 @@ export async function removeOAuthAccountByIdOrName(
   }
 
   try {
-    const resolved = await resolveOAuthAccountByIdOrName(idOrName);
+    const resolved = await resolveOAuthAccountByIdOrName(idOrName, actionTarget);
 
     if (!resolved.accountName) {
       return { ok: false, error: "OAuth account not found" };
@@ -901,7 +982,7 @@ export async function toggleOAuthAccountByIdOrName(
   }
 
   try {
-    const resolved = await resolveOAuthAccountByIdOrName(idOrName);
+    const resolved = await resolveOAuthAccountByIdOrName(idOrName, actionTarget);
 
     if (!resolved.accountName) {
       return { ok: false, error: "OAuth account not found" };
@@ -931,7 +1012,9 @@ export async function toggleOAuthAccountByIdOrName(
         },
         body: JSON.stringify({
           name: actionTarget?.accountName ?? resolved.accountName,
-          ...(actionTarget?.provider ? { provider: actionTarget.provider } : {}),
+          ...(canonicalizeOAuthProvider(actionTarget?.provider)
+            ? { provider: canonicalizeOAuthProvider(actionTarget?.provider) }
+            : {}),
           disabled,
         }),
       });

@@ -15,6 +15,7 @@ import { createHash } from "crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 import { OAUTH_PROVIDER } from "@/lib/providers/constants";
+import { inferOAuthProviderFromIdentifiers, isMeaningfulProviderValue } from "@/lib/providers/provider-inference";
 
 const PROVIDER = {
   CLAUDE: "claude",
@@ -48,6 +49,13 @@ const OAUTH_PROVIDER_ALIASES: Record<string, string> = {
   codebuddy: OAUTH_PROVIDER.CODEBUDDY,
 };
 
+interface OAuthAuthFileEntry {
+  name?: unknown;
+  provider?: unknown;
+  type?: unknown;
+  email?: unknown;
+}
+
 function hashProviderKey(apiKey: string): string {
   return createHash("sha256").update(apiKey).digest("hex");
 }
@@ -61,24 +69,40 @@ function maskProviderKey(apiKey: string): string {
   return `${prefix}...${suffix}`;
 }
 
-if (!process.env.DATABASE_URL) {
-  console.error("\n❌ ERROR: DATABASE_URL environment variable not set");
-  console.error("   Set DATABASE_URL in your environment or .env file\n");
-  process.exit(1);
-}
-
-if (!process.env.CLIPROXYAPI_MANAGEMENT_URL && !process.env.MANAGEMENT_API_KEY) {
-  console.warn("\n⚠️  WARNING: Management API environment variables not set");
-  console.warn("   CLIPROXYAPI_MANAGEMENT_URL and MANAGEMENT_API_KEY should be configured");
-  console.warn("   Migration will continue but may not fetch remote keys\n");
-}
-
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL,
-});
-
-const prisma = new PrismaClient({ adapter });
 const isDryRun = process.argv.includes("--dry-run");
+
+export function inferCanonicalOAuthProvider(file: OAuthAuthFileEntry): string {
+  const metadataProvider = typeof file.provider === "string" && isMeaningfulProviderValue(file.provider)
+    ? file.provider
+    : typeof file.type === "string" && isMeaningfulProviderValue(file.type)
+      ? file.type
+      : null;
+  const inferredProvider = inferOAuthProviderFromIdentifiers(
+    undefined,
+    typeof file.name === "string" ? file.name : undefined,
+    typeof file.email === "string" ? file.email : undefined
+  );
+  const providerType = (metadataProvider ?? inferredProvider ?? "unknown").toLowerCase();
+
+  return OAUTH_PROVIDER_ALIASES[providerType] ?? providerType;
+}
+
+export function normalizeOAuthAccountEmail(email: unknown): string | null {
+  if (typeof email !== "string") {
+    return null;
+  }
+
+  const normalized = email.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function createPrismaClient() {
+  const adapter = new PrismaPg({
+    connectionString: process.env.DATABASE_URL,
+  });
+
+  return new PrismaClient({ adapter });
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -104,6 +128,20 @@ async function fetchManagementJson(endpoint: string): Promise<unknown> {
 }
 
 async function main() {
+  if (!process.env.DATABASE_URL) {
+    console.error("\n❌ ERROR: DATABASE_URL environment variable not set");
+    console.error("   Set DATABASE_URL in your environment or .env file\n");
+    process.exit(1);
+  }
+
+  if (!process.env.CLIPROXYAPI_MANAGEMENT_URL && !process.env.MANAGEMENT_API_KEY) {
+    console.warn("\n⚠️  WARNING: Management API environment variables not set");
+    console.warn("   CLIPROXYAPI_MANAGEMENT_URL and MANAGEMENT_API_KEY should be configured");
+    console.warn("   Migration will continue but may not fetch remote keys\n");
+  }
+
+  const prisma = createPrismaClient();
+
   console.log("\n🔄 Provider Ownership Migration");
   console.log("================================\n");
 
@@ -280,19 +318,16 @@ async function main() {
         const accountName = file.name;
         if (typeof accountName !== "string") continue;
 
-        const accountEmail = typeof file.email === "string" ? file.email : null;
-        const providerTypeRaw =
-          typeof file.provider === "string"
-            ? file.provider
-            : typeof file.type === "string"
-              ? file.type
-              : "unknown";
-        const providerType = providerTypeRaw.toLowerCase();
-        const normalizedProvider =
-          OAUTH_PROVIDER_ALIASES[providerType] ?? providerType;
+        const accountEmail = normalizeOAuthAccountEmail(file.email);
+        const normalizedProvider = inferCanonicalOAuthProvider(file);
 
         const existing = await prisma.providerOAuthOwnership.findUnique({
-          where: { accountName },
+          where: {
+            provider_accountName: {
+              provider: normalizedProvider,
+              accountName,
+            },
+          },
         });
 
         if (existing) {
@@ -342,10 +377,10 @@ async function main() {
   await prisma.$disconnect();
 }
 
-main().catch((error) => {
-  console.error("\n❌ Migration failed with error:");
-  console.error(error);
-  prisma.$disconnect().finally(() => {
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((error) => {
+    console.error("\n❌ Migration failed with error:");
+    console.error(error);
     process.exit(1);
   });
-});
+}

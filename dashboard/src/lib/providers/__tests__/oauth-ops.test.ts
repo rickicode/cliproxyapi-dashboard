@@ -515,13 +515,121 @@ describe("importOAuthCredential", () => {
       JSON.stringify({ type: "codex", email: "user@example.com", access_token: "token" })
     );
 
-    expect(fetchWithTimeout).toHaveBeenCalledWith(
-      "http://localhost:8317/auth-files?name=codex_user%40example.com.json",
+    expect(fetchWithTimeout).toHaveBeenLastCalledWith(
+      "http://localhost:8317/auth-files?name=codex_user%40example.com.json&provider=codex",
       {
         method: "DELETE",
         headers: { Authorization: "Bearer test-key" },
       }
     );
+  });
+
+  it("treats auth-file snapshot diff entries as provider-scoped when names collide across providers", async () => {
+    resolveOAuthOwnershipMock.mockResolvedValueOnce({
+      kind: "claimed",
+      ownership: {
+        id: "ownership-import-provider-scope-1",
+        userId: "user-1",
+        provider: "codex",
+        accountName: "shared@example.com.json",
+        accountEmail: "user@example.com",
+      },
+    });
+
+    vi.mocked(fetchWithTimeout)
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            files: [{ name: "shared@example.com.json", provider: "anthropic", email: "user@example.com" }],
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 201 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            files: [
+              { name: "shared@example.com.json", provider: "anthropic", email: "user@example.com" },
+              { name: "shared@example.com.json", provider: "openai", email: "user@example.com" },
+            ],
+          }),
+          { status: 200 }
+        )
+      );
+
+    await expect(
+      importOAuthCredential(
+        "user-1",
+        "codex",
+        "shared@example.com.json",
+        JSON.stringify({ type: "codex", email: "user@example.com", access_token: "token" })
+      )
+    ).resolves.toEqual({
+      ok: true,
+      id: "ownership-import-provider-scope-1",
+      accountName: "shared@example.com.json",
+      resolution: "claimed",
+    });
+
+    expect(resolveOAuthOwnershipMock).toHaveBeenCalledWith({
+      currentUserId: "user-1",
+      provider: "codex",
+      accountName: "shared@example.com.json",
+      accountEmail: "user@example.com",
+    });
+  });
+
+  it("canonicalizes aliased provider-only fallback matches during import", async () => {
+    resolveOAuthOwnershipMock.mockResolvedValueOnce({
+      kind: "claimed",
+      ownership: {
+        id: "ownership-import-provider-alias-1",
+        userId: "user-1",
+        provider: "codex",
+        accountName: "managed-upload-123.json",
+        accountEmail: "user@example.com",
+      },
+    });
+
+    vi.mocked(fetchWithTimeout)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ files: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 201 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            files: [
+              {
+                name: "managed-upload-123.json",
+                provider: "openai",
+                email: "user@example.com",
+              },
+            ],
+          }),
+          { status: 200 }
+        )
+      );
+
+    await expect(
+      importOAuthCredential(
+        "user-1",
+        "codex",
+        "codex_user@example.com.json",
+        JSON.stringify({ type: "codex", email: "user@example.com", access_token: "token" })
+      )
+    ).resolves.toEqual({
+      ok: true,
+      id: "ownership-import-provider-alias-1",
+      accountName: "managed-upload-123.json",
+      resolution: "claimed",
+    });
+
+    expect(resolveOAuthOwnershipMock).toHaveBeenCalledWith({
+      currentUserId: "user-1",
+      provider: "codex",
+      accountName: "managed-upload-123.json",
+      accountEmail: "user@example.com",
+    });
   });
 });
 
@@ -723,6 +831,146 @@ describe("listOAuthWithOwnership", () => {
     });
   });
 
+  it("maps ownerships by provider plus account name when providers share the same account name", async () => {
+    vi.mocked(fetchWithTimeout).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          files: [
+            {
+              id: "file-1",
+              name: "shared@example.com.json",
+              provider: "claude",
+              email: "shared@example.com",
+            },
+            {
+              id: "file-2",
+              name: "shared@example.com.json",
+              provider: "gemini",
+              email: "shared@example.com",
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+
+    vi.mocked(prisma.providerOAuthOwnership.findMany).mockResolvedValueOnce([
+      {
+        id: "ownership-claude",
+        userId: "user-1",
+        provider: "claude",
+        accountName: "shared@example.com.json",
+        accountEmail: "shared@example.com",
+        user: { id: "user-1", username: "alice" },
+        createdAt: new Date("2026-04-19T00:00:00.000Z"),
+      },
+      {
+        id: "ownership-gemini",
+        userId: "user-2",
+        provider: "gemini-cli",
+        accountName: "shared@example.com.json",
+        accountEmail: "shared@example.com",
+        user: { id: "user-2", username: "bob" },
+        createdAt: new Date("2026-04-19T00:00:00.000Z"),
+      },
+    ] as never);
+
+    await expect(listOAuthWithOwnership("user-1", true)).resolves.toEqual({
+      ok: true,
+      accounts: [
+        {
+          id: "file-1",
+          accountName: "shared@example.com.json",
+          accountEmail: "shared@example.com",
+          provider: "claude",
+          ownerUsername: "alice",
+          ownerUserId: "user-1",
+          isOwn: true,
+          status: "active",
+          statusMessage: null,
+          unavailable: false,
+        },
+        {
+          id: "file-2",
+          accountName: "shared@example.com.json",
+          accountEmail: "shared@example.com",
+          provider: "gemini",
+          ownerUsername: "bob",
+          ownerUserId: "user-2",
+          isOwn: false,
+          status: "active",
+          statusMessage: null,
+          unavailable: false,
+        },
+      ],
+    });
+
+    expect(prisma.providerOAuthOwnership.findMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { provider: "claude", accountName: "shared@example.com.json" },
+          { provider: "gemini-cli", accountName: "shared@example.com.json" },
+        ],
+      },
+      include: { user: { select: { id: true, username: true } } },
+    });
+  });
+
+  it("maps aliased providers to canonical ownership records during listing", async () => {
+    vi.mocked(fetchWithTimeout).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          files: [
+            {
+              id: "file-1",
+              name: "shared@example.com.json",
+              provider: "anthropic",
+              email: "shared@example.com",
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+
+    vi.mocked(prisma.providerOAuthOwnership.findMany).mockResolvedValueOnce([
+      {
+        id: "ownership-claude",
+        userId: "user-1",
+        provider: "claude",
+        accountName: "shared@example.com.json",
+        accountEmail: "shared@example.com",
+        user: { id: "user-1", username: "alice" },
+        createdAt: new Date("2026-04-19T00:00:00.000Z"),
+      },
+    ] as never);
+
+    await expect(listOAuthWithOwnership("user-1", true)).resolves.toEqual({
+      ok: true,
+      accounts: [
+        {
+          id: "file-1",
+          accountName: "shared@example.com.json",
+          accountEmail: "shared@example.com",
+          provider: "anthropic",
+          ownerUsername: "alice",
+          ownerUserId: "user-1",
+          isOwn: true,
+          status: "active",
+          statusMessage: null,
+          unavailable: false,
+        },
+      ],
+    });
+
+    expect(prisma.providerOAuthOwnership.findMany).toHaveBeenCalledWith({
+      where: {
+        OR: [{ provider: "claude", accountName: "shared@example.com.json" }],
+      },
+      include: { user: { select: { id: true, username: true } } },
+    });
+  });
+
   it("preserves provider-scoped bulk targeting by forwarding account name and provider for fallback targeting", async () => {
     vi.mocked(fetchWithTimeout).mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
@@ -741,6 +989,101 @@ describe("listOAuthWithOwnership", () => {
       failures: [],
     });
 
+    expect(fetchWithTimeout).toHaveBeenCalledWith(
+      "http://localhost:8317/auth-files?name=shared%40example.com.json&provider=claude",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "shared@example.com.json",
+          provider: "claude",
+          disabled: true,
+        }),
+      })
+    );
+  });
+
+  it("uses provider-scoped lookup when bulk actions resolve by account name", async () => {
+    vi.mocked(prisma.providerOAuthOwnership.findUnique)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "ownership-claude",
+        userId: "admin-1",
+        provider: "claude",
+        accountName: "shared@example.com.json",
+        accountEmail: null,
+        createdAt: new Date("2026-04-19T00:00:00.000Z"),
+      } as never);
+    vi.mocked(fetchWithTimeout).mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await expect(
+      bulkUpdateOAuthAccounts("admin-1", true, {
+        action: "disconnect",
+        actionKeys: ["oauth:claude:shared%40example.com.json:shared@example.com.json"],
+      })
+    ).resolves.toEqual({
+      ok: true,
+      summary: {
+        total: 1,
+        successCount: 1,
+        failureCount: 0,
+      },
+      failures: [],
+    });
+
+    expect(prisma.providerOAuthOwnership.findUnique).toHaveBeenNthCalledWith(2, {
+      where: {
+        provider_accountName: {
+          provider: "claude",
+          accountName: "shared@example.com.json",
+        },
+      },
+      select: { id: true, userId: true, accountName: true },
+    });
+    expect(fetchWithTimeout).toHaveBeenCalledWith(
+      "http://localhost:8317/auth-files?name=shared%40example.com.json&provider=claude",
+      expect.objectContaining({
+        method: "DELETE",
+      })
+    );
+  });
+
+  it("canonicalizes aliased providers for provider-scoped bulk actions", async () => {
+    vi.mocked(prisma.providerOAuthOwnership.findUnique)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "ownership-claude",
+        userId: "admin-1",
+        provider: "claude",
+        accountName: "shared@example.com.json",
+        accountEmail: null,
+        createdAt: new Date("2026-04-19T00:00:00.000Z"),
+      } as never);
+    vi.mocked(fetchWithTimeout).mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await expect(
+      bulkUpdateOAuthAccounts("admin-1", true, {
+        action: "disable",
+        actionKeys: ["oauth:anthropic:shared%40example.com.json:shared@example.com.json"],
+      })
+    ).resolves.toEqual({
+      ok: true,
+      summary: {
+        total: 1,
+        successCount: 1,
+        failureCount: 0,
+      },
+      failures: [],
+    });
+
+    expect(prisma.providerOAuthOwnership.findUnique).toHaveBeenNthCalledWith(2, {
+      where: {
+        provider_accountName: {
+          provider: "claude",
+          accountName: "shared@example.com.json",
+        },
+      },
+      select: { id: true, userId: true, accountName: true },
+    });
     expect(fetchWithTimeout).toHaveBeenCalledWith(
       "http://localhost:8317/auth-files?name=shared%40example.com.json&provider=claude",
       expect.objectContaining({

@@ -7,6 +7,39 @@ import { BACKUP_TYPE, BACKUP_VERSION } from "@/lib/backup/types";
 import { prisma } from "@/lib/db";
 import { getUserIdMapByUsername } from "@/lib/backup/user-mapping";
 
+const OAUTH_PROVIDER_ALIASES: Record<string, string> = {
+  anthropic: "claude",
+  claude: "claude",
+  gemini: "gemini-cli",
+  "gemini-cli": "gemini-cli",
+  openai: "codex",
+  codex: "codex",
+  github: "copilot",
+  "github-copilot": "copilot",
+  copilot: "copilot",
+  antigravity: "antigravity",
+  iflow: "iflow",
+  qwen: "qwen",
+  kimi: "kimi",
+  kiro: "kiro",
+  cursor: "cursor",
+  codebuddy: "codebuddy",
+};
+
+function normalizeOAuthProviderAlias(provider: string): string {
+  const normalized = provider.trim().toLowerCase();
+  return OAUTH_PROVIDER_ALIASES[normalized] ?? normalized;
+}
+
+function normalizeOAuthAccountEmail(email: string | null | undefined): string | null {
+  if (typeof email !== "string") {
+    return null;
+  }
+
+  const normalized = email.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
 export async function restoreProviderCredentialsBackup(
   backup: ProviderCredentialsBackupEnvelope
 ): Promise<RestoreProviderCredentialsResult> {
@@ -88,18 +121,26 @@ export async function restoreProviderCredentialsBackup(
       continue;
     }
 
+    const normalizedProvider = normalizeOAuthProviderAlias(item.provider);
+    const normalizedAccountEmail = normalizeOAuthAccountEmail(item.accountEmail);
+
     try {
       const existing = await prisma.providerOAuthOwnership.findUnique({
-        where: { accountName: item.accountName },
+        where: {
+          provider_accountName: {
+            provider: normalizedProvider,
+            accountName: item.accountName,
+          },
+        },
       });
 
       if (!existing) {
         await prisma.providerOAuthOwnership.create({
           data: {
             userId,
-            provider: item.provider,
+            provider: normalizedProvider,
             accountName: item.accountName,
-            accountEmail: item.accountEmail,
+            accountEmail: normalizedAccountEmail,
           },
         });
         createdProviderOAuth += 1;
@@ -112,7 +153,7 @@ export async function restoreProviderCredentialsBackup(
       }
 
       const needsUpdate =
-        existing.provider !== item.provider || existing.accountEmail !== item.accountEmail;
+        existing.provider !== normalizedProvider || existing.accountEmail !== normalizedAccountEmail;
 
       if (!needsUpdate) {
         skippedProviderOAuth += 1;
@@ -122,8 +163,8 @@ export async function restoreProviderCredentialsBackup(
       await prisma.providerOAuthOwnership.update({
         where: { id: existing.id },
         data: {
-          provider: item.provider,
-          accountEmail: item.accountEmail,
+          provider: normalizedProvider,
+          accountEmail: normalizedAccountEmail,
         },
       });
       updatedProviderOAuth += 1;

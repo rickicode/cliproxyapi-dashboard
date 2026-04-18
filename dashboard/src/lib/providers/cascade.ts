@@ -67,7 +67,7 @@ export async function cascadeDeleteUserProviders(
 
     const oauthResults = await Promise.allSettled(
       ownedOAuth.map(async (oauth) => {
-        const removeResult = await removeOAuthAccount(userId, oauth.accountName, isAdmin);
+        const removeResult = await removeOAuthAccount(userId, oauth.provider, oauth.accountName, isAdmin);
         if (!removeResult.ok) {
           throw new Error(`Failed to remove ${oauth.provider} OAuth account ${oauth.accountName}: ${removeResult.error}`);
         }

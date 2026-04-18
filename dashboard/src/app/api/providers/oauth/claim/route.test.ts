@@ -109,7 +109,7 @@ describe("POST /api/providers/oauth/claim", () => {
       },
     });
 
-    const response = await postClaim({ accountName: "claude-user@example.com.json" });
+    const response = await postClaim({ accountName: "claude-user@example.com.json", provider: "claude" });
     const body = await response.json();
 
     expect(response.status).toBe(201);
@@ -149,7 +149,7 @@ describe("POST /api/providers/oauth/claim", () => {
       },
     });
 
-    const response = await postClaim({ accountName: "claude-user@example.com.json" });
+    const response = await postClaim({ accountName: "claude-user@example.com.json", provider: "claude" });
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -183,7 +183,7 @@ describe("POST /api/providers/oauth/claim", () => {
       },
     });
 
-    const response = await postClaim({ accountName: "claude-user@example.com.json" });
+    const response = await postClaim({ accountName: "claude-user@example.com.json", provider: "claude" });
     const body = await response.json();
 
     expect(response.status).toBe(409);
@@ -195,7 +195,7 @@ describe("POST /api/providers/oauth/claim", () => {
     });
   });
 
-  it("returns bad gateway when auth file metadata lacks provider and type", async () => {
+  it("ignores same-name entries without provider metadata when a provider-scoped match exists", async () => {
     fetchWithTimeoutMock.mockResolvedValueOnce(
       jsonResponse({
         files: [
@@ -203,24 +203,38 @@ describe("POST /api/providers/oauth/claim", () => {
             name: "claude-user@example.com.json",
             email: "user@example.com",
           },
+          {
+            name: "claude-user@example.com.json",
+            provider: "claude",
+            email: "user@example.com",
+          },
         ],
       })
     );
 
-    const response = await postClaim({ accountName: "claude-user@example.com.json" });
-    const body = await response.json();
-
-    expect(response.status).toBe(502);
-    expect(body).toEqual({
-      error: {
-        code: "UPSTREAM_ERROR",
-        message: "Upstream service error",
+    resolveOAuthOwnershipMock.mockResolvedValueOnce({
+      kind: "claimed",
+      ownership: {
+        id: "ownership-1",
+        userId: "admin-user",
+        provider: "claude",
+        accountName: "claude-user@example.com.json",
+        accountEmail: "user@example.com",
       },
     });
-    expect(resolveOAuthOwnershipMock).not.toHaveBeenCalled();
+
+    const response = await postClaim({ accountName: "claude-user@example.com.json", provider: "claude" });
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body).toEqual({
+      id: "ownership-1",
+      accountName: "claude-user@example.com.json",
+      provider: "claude",
+    });
   });
 
-  it("returns bad gateway when the matched auth file has malformed fields", async () => {
+  it("ignores malformed same-name entries from other providers when a provider-scoped match exists", async () => {
     fetchWithTimeoutMock.mockResolvedValueOnce(
       jsonResponse({
         files: [
@@ -230,21 +244,35 @@ describe("POST /api/providers/oauth/claim", () => {
             type: null,
             email: ["user@example.com"],
           },
+          {
+            name: "claude-user@example.com.json",
+            provider: "claude",
+            email: "user@example.com",
+          },
         ],
       })
     );
 
-    const response = await postClaim({ accountName: "claude-user@example.com.json" });
-    const body = await response.json();
-
-    expect(response.status).toBe(502);
-    expect(body).toEqual({
-      error: {
-        code: "UPSTREAM_ERROR",
-        message: "Upstream service error",
+    resolveOAuthOwnershipMock.mockResolvedValueOnce({
+      kind: "claimed",
+      ownership: {
+        id: "ownership-1",
+        userId: "admin-user",
+        provider: "claude",
+        accountName: "claude-user@example.com.json",
+        accountEmail: "user@example.com",
       },
     });
-    expect(resolveOAuthOwnershipMock).not.toHaveBeenCalled();
+
+    const response = await postClaim({ accountName: "claude-user@example.com.json", provider: "claude" });
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body).toEqual({
+      id: "ownership-1",
+      accountName: "claude-user@example.com.json",
+      provider: "claude",
+    });
   });
 
   it("returns bad gateway when management API returns invalid JSON", async () => {
@@ -257,7 +285,7 @@ describe("POST /api/providers/oauth/claim", () => {
       })
     );
 
-    const response = await postClaim({ accountName: "claude-user@example.com.json" });
+    const response = await postClaim({ accountName: "claude-user@example.com.json", provider: "claude" });
     const body = await response.json();
 
     expect(response.status).toBe(502);
@@ -280,7 +308,7 @@ describe("POST /api/providers/oauth/claim", () => {
       })
     );
 
-    const response = await postClaim({ accountName: "claude-user@example.com.json" });
+    const response = await postClaim({ accountName: "claude-user@example.com.json", provider: "claude" });
     const body = await response.json();
 
     expect(response.status).toBe(502);
@@ -291,5 +319,222 @@ describe("POST /api/providers/oauth/claim", () => {
       },
     });
     expect(resolveOAuthOwnershipMock).not.toHaveBeenCalled();
+  });
+
+  it("requires provider in the request body", async () => {
+    const response = await postClaim({ accountName: "claude-user@example.com.json" });
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "Request body must include 'accountName' and 'provider' (string)",
+      },
+    });
+    expect(fetchWithTimeoutMock).not.toHaveBeenCalled();
+    expect(resolveOAuthOwnershipMock).not.toHaveBeenCalled();
+  });
+
+  it("matches auth files by provider plus account name when duplicate account names exist across providers", async () => {
+    fetchWithTimeoutMock.mockResolvedValueOnce(
+      jsonResponse({
+        files: [
+          {
+            name: "shared@example.com.json",
+            provider: "codex",
+            email: "wrong@example.com",
+          },
+          {
+            name: "shared@example.com.json",
+            provider: "claude",
+            email: "right@example.com",
+          },
+        ],
+      })
+    );
+    resolveOAuthOwnershipMock.mockResolvedValueOnce({
+      kind: "claimed",
+      ownership: {
+        id: "ownership-4",
+        userId: "admin-user",
+        provider: "claude",
+        accountName: "shared@example.com.json",
+        accountEmail: "right@example.com",
+      },
+    });
+
+    const response = await postClaim({ accountName: "shared@example.com.json", provider: "claude" });
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body).toEqual({
+      id: "ownership-4",
+      accountName: "shared@example.com.json",
+      provider: "claude",
+    });
+    expect(resolveOAuthOwnershipMock).toHaveBeenCalledWith({
+      currentUserId: "admin-user",
+      provider: "claude",
+      accountName: "shared@example.com.json",
+      accountEmail: "right@example.com",
+    });
+  });
+
+  it("accepts provider aliases when matching the management auth file", async () => {
+    fetchWithTimeoutMock.mockResolvedValueOnce(
+      jsonResponse({
+        files: [
+          {
+            name: "shared@example.com.json",
+            provider: "claude",
+            email: "right@example.com",
+          },
+        ],
+      })
+    );
+    resolveOAuthOwnershipMock.mockResolvedValueOnce({
+      kind: "claimed",
+      ownership: {
+        id: "ownership-5",
+        userId: "admin-user",
+        provider: "claude",
+        accountName: "shared@example.com.json",
+        accountEmail: "right@example.com",
+      },
+    });
+
+    const response = await postClaim({ accountName: "shared@example.com.json", provider: "anthropic" });
+
+    expect(response.status).toBe(201);
+    expect(resolveOAuthOwnershipMock).toHaveBeenCalledWith({
+      currentUserId: "admin-user",
+      provider: "claude",
+      accountName: "shared@example.com.json",
+      accountEmail: "right@example.com",
+    });
+  });
+
+  it("uses inferred provider matching when auth-file metadata is missing", async () => {
+    fetchWithTimeoutMock.mockResolvedValueOnce(
+      jsonResponse({
+        files: [
+          {
+            name: "claude-inferred-user@example.com.json",
+            email: "user@example.com",
+          },
+        ],
+      })
+    );
+    resolveOAuthOwnershipMock.mockResolvedValueOnce({
+      kind: "claimed",
+      ownership: {
+        id: "ownership-6",
+        userId: "admin-user",
+        provider: "claude",
+        accountName: "claude-inferred-user@example.com.json",
+        accountEmail: "user@example.com",
+      },
+    });
+
+    const response = await postClaim({ accountName: "claude-inferred-user@example.com.json", provider: "claude" });
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body).toEqual({
+      id: "ownership-6",
+      accountName: "claude-inferred-user@example.com.json",
+      provider: "claude",
+    });
+    expect(resolveOAuthOwnershipMock).toHaveBeenCalledWith({
+      currentUserId: "admin-user",
+      provider: "claude",
+      accountName: "claude-inferred-user@example.com.json",
+      accountEmail: "user@example.com",
+    });
+  });
+
+  it("prefers explicit provider metadata over inferred same-name matches", async () => {
+    fetchWithTimeoutMock.mockResolvedValueOnce(
+      jsonResponse({
+        files: [
+          {
+            name: "claude-user@example.com.json",
+            email: "inferred@example.com",
+          },
+          {
+            name: "claude-user@example.com.json",
+            provider: "claude",
+            email: "explicit@example.com",
+          },
+        ],
+      })
+    );
+    resolveOAuthOwnershipMock.mockResolvedValueOnce({
+      kind: "claimed",
+      ownership: {
+        id: "ownership-7",
+        userId: "admin-user",
+        provider: "claude",
+        accountName: "claude-user@example.com.json",
+        accountEmail: "explicit@example.com",
+      },
+    });
+
+    const response = await postClaim({ accountName: "claude-user@example.com.json", provider: "claude" });
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body).toEqual({
+      id: "ownership-7",
+      accountName: "claude-user@example.com.json",
+      provider: "claude",
+    });
+    expect(resolveOAuthOwnershipMock).toHaveBeenCalledWith({
+      currentUserId: "admin-user",
+      provider: "claude",
+      accountName: "claude-user@example.com.json",
+      accountEmail: "explicit@example.com",
+    });
+  });
+
+  it("ignores non-meaningful provider metadata and falls back to identifier inference for claim matching", async () => {
+    fetchWithTimeoutMock.mockResolvedValueOnce(
+      jsonResponse({
+        files: [
+          {
+            name: "claude-user@example.com.json",
+            provider: "unknown",
+            email: "user@example.com",
+          },
+        ],
+      })
+    );
+    resolveOAuthOwnershipMock.mockResolvedValueOnce({
+      kind: "claimed",
+      ownership: {
+        id: "ownership-8",
+        userId: "admin-user",
+        provider: "claude",
+        accountName: "claude-user@example.com.json",
+        accountEmail: "user@example.com",
+      },
+    });
+
+    const response = await postClaim({ accountName: "claude-user@example.com.json", provider: "claude" });
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body).toEqual({
+      id: "ownership-8",
+      accountName: "claude-user@example.com.json",
+      provider: "claude",
+    });
+    expect(resolveOAuthOwnershipMock).toHaveBeenCalledWith({
+      currentUserId: "admin-user",
+      provider: "claude",
+      accountName: "claude-user@example.com.json",
+      accountEmail: "user@example.com",
+    });
   });
 });

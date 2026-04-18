@@ -242,6 +242,326 @@ describe("POST /api/management/oauth-callback", () => {
     });
   });
 
+  it("filters ownership lookups by provider when different providers share the same account name", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ files: [] }))
+      .mockResolvedValueOnce(jsonResponse({}, 200))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          files: [
+            {
+              name: "shared@example.com.json",
+              provider: "claude",
+              email: "shared@example.com",
+            },
+          ],
+        })
+      );
+    findManyMock.mockResolvedValueOnce([]);
+    resolveOAuthOwnershipMock.mockResolvedValueOnce({
+      kind: "claimed",
+      ownership: {
+        id: "ownership-provider-scope-1",
+        userId: "user-1",
+        provider: "claude",
+        accountName: "shared@example.com.json",
+        accountEmail: "shared@example.com",
+      },
+    });
+
+    const response = await postOAuthCallback({
+      provider: "claude",
+      callbackUrl: "http://localhost/callback?code=abc&state=state-provider-scope",
+      state: "state-provider-scope",
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      status: 200,
+      autoClaim: {
+        kind: "claimed",
+        candidate: {
+          accountName: "shared@example.com.json",
+          accountEmail: "shared@example.com",
+          ownerUserId: "user-1",
+          ownerUsername: null,
+        },
+      },
+    });
+    expect(findManyMock).toHaveBeenCalledWith({
+      where: {
+        provider: "claude",
+        accountName: { in: ["shared@example.com.json"] },
+      },
+      include: { user: { select: { id: true, username: true } } },
+    });
+  });
+
+  it("uses inferred provider matching for ownership lookup when auth-file provider metadata is missing", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ files: [] }))
+      .mockResolvedValueOnce(jsonResponse({}, 200))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          files: [
+            {
+              name: "claude-state-provider-inferred-user@example.com.json",
+              email: "user@example.com",
+            },
+          ],
+        })
+      );
+    findManyMock.mockResolvedValueOnce([
+      {
+        provider: "claude",
+        accountName: "claude-state-provider-inferred-user@example.com.json",
+        userId: "user-1",
+        user: { id: "user-1", username: "ricki" },
+      },
+    ]);
+
+    const response = await postOAuthCallback({
+      provider: "claude",
+      callbackUrl: "http://localhost/callback?code=abc&state=state-provider-inferred",
+      state: "state-provider-inferred",
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      status: 200,
+      autoClaim: {
+        kind: "already_owned_by_current_user",
+        candidate: {
+          accountName: "claude-state-provider-inferred-user@example.com.json",
+          accountEmail: "user@example.com",
+          ownerUserId: "user-1",
+          ownerUsername: "ricki",
+        },
+      },
+    });
+    expect(resolveOAuthOwnershipMock).not.toHaveBeenCalled();
+  });
+
+  it("normalizes explicit auth-file provider aliases before ownership matching", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ files: [] }))
+      .mockResolvedValueOnce(jsonResponse({}, 200))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          files: [
+            {
+              name: "shared@example.com.json",
+              provider: "anthropic",
+              type: "anthropic",
+              email: "user@example.com",
+            },
+          ],
+        })
+      );
+    findManyMock.mockResolvedValueOnce([
+      {
+        provider: "claude",
+        accountName: "shared@example.com.json",
+        userId: "user-1",
+        user: { id: "user-1", username: "ricki" },
+      },
+    ]);
+
+    const response = await postOAuthCallback({
+      provider: "claude",
+      callbackUrl: "http://localhost/callback?code=abc&state=state-provider-alias",
+      state: "state-provider-alias",
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      status: 200,
+      autoClaim: {
+        kind: "already_owned_by_current_user",
+        candidate: {
+          accountName: "shared@example.com.json",
+          accountEmail: "user@example.com",
+          ownerUserId: "user-1",
+          ownerUsername: "ricki",
+        },
+      },
+    });
+    expect(findManyMock).toHaveBeenCalledWith({
+      where: {
+        provider: "claude",
+        accountName: { in: ["shared@example.com.json"] },
+      },
+      include: { user: { select: { id: true, username: true } } },
+    });
+    expect(resolveOAuthOwnershipMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to inferred provider matching when auth-file metadata is present but non-meaningful", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ files: [] }))
+      .mockResolvedValueOnce(jsonResponse({}, 200))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          files: [
+            {
+              name: "anthropic-state-non-meaningful-user@example.com.json",
+              provider: "unknown",
+              email: "user@example.com",
+            },
+          ],
+        })
+      );
+    findManyMock.mockResolvedValueOnce([
+      {
+        provider: "claude",
+        accountName: "anthropic-state-non-meaningful-user@example.com.json",
+        userId: "user-1",
+        user: { id: "user-1", username: "ricki" },
+      },
+    ]);
+
+    const response = await postOAuthCallback({
+      provider: "claude",
+      callbackUrl: "http://localhost/callback?code=abc&state=state-non-meaningful-provider",
+      state: "state-non-meaningful-provider",
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      status: 200,
+      autoClaim: {
+        kind: "already_owned_by_current_user",
+        candidate: {
+          accountName: "anthropic-state-non-meaningful-user@example.com.json",
+          accountEmail: "user@example.com",
+          ownerUserId: "user-1",
+          ownerUsername: "ricki",
+        },
+      },
+    });
+    expect(resolveOAuthOwnershipMock).not.toHaveBeenCalled();
+  });
+
+  it("uses inferred provider fallback in the remaining candidate path when auth-file metadata is missing", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ files: [] }))
+      .mockResolvedValueOnce(jsonResponse({}, 200))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          files: [
+            {
+              name: "anthropic-state-inferred-user@example.com.json",
+              email: "user@example.com",
+            },
+          ],
+        })
+      );
+    findManyMock.mockResolvedValueOnce([
+      {
+        provider: "claude",
+        accountName: "anthropic-state-inferred-user@example.com.json",
+        userId: "user-1",
+        user: { id: "user-1", username: "ricki" },
+      },
+    ]);
+
+    const response = await postOAuthCallback({
+      provider: "claude",
+      callbackUrl: "http://localhost/callback?code=abc&state=state-inferred-candidate-path",
+      state: "state-inferred-candidate-path",
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      status: 200,
+      autoClaim: {
+        kind: "already_owned_by_current_user",
+        candidate: {
+          accountName: "anthropic-state-inferred-user@example.com.json",
+          accountEmail: "user@example.com",
+          ownerUserId: "user-1",
+          ownerUsername: "ricki",
+        },
+      },
+    });
+    expect(resolveOAuthOwnershipMock).not.toHaveBeenCalled();
+  });
+
+  it("treats snapshot diff newness as provider-scoped when another provider already has the same filename", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          files: [
+            {
+              name: "shared@example.com.json",
+              provider: "gemini",
+              email: "shared@example.com",
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({}, 200))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          files: [
+            {
+              name: "shared@example.com.json",
+              provider: "gemini",
+              email: "shared@example.com",
+            },
+            {
+              name: "shared@example.com.json",
+              provider: "anthropic",
+              email: "user@example.com",
+            },
+          ],
+        })
+      );
+    findManyMock.mockResolvedValueOnce([]);
+    resolveOAuthOwnershipMock.mockResolvedValueOnce({
+      kind: "claimed",
+      ownership: {
+        id: "ownership-provider-scoped-diff-1",
+        userId: "user-1",
+        provider: "claude",
+        accountName: "shared@example.com.json",
+        accountEmail: "user@example.com",
+      },
+    });
+
+    const response = await postOAuthCallback({
+      provider: "claude",
+      callbackUrl: "http://localhost/callback?code=abc&state=state-provider-scoped-diff",
+      state: "state-provider-scoped-diff",
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      status: 200,
+      autoClaim: {
+        kind: "claimed",
+        candidate: {
+          accountName: "shared@example.com.json",
+          accountEmail: "user@example.com",
+          ownerUserId: "user-1",
+          ownerUsername: null,
+        },
+      },
+    });
+    expect(resolveOAuthOwnershipMock).toHaveBeenCalledWith({
+      currentUserId: "user-1",
+      provider: "claude",
+      accountName: "shared@example.com.json",
+      accountEmail: "user@example.com",
+    });
+  });
+
   it("returns connect success with no_match when no candidate can be classified", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ files: [] }));
     fetchMock.mockResolvedValueOnce(jsonResponse({}, 200));
@@ -404,6 +724,7 @@ describe("POST /api/management/oauth-callback", () => {
       );
     findManyMock.mockResolvedValueOnce([
       {
+        provider: "claude",
         accountName: "claude-user@example.com.json",
         userId: "user-1",
         user: { id: "user-1", username: "ricki" },
@@ -450,6 +771,7 @@ describe("POST /api/management/oauth-callback", () => {
       );
     findManyMock.mockResolvedValueOnce([
       {
+        provider: "claude",
         accountName: "claude-user@example.com.json",
         userId: "user-2",
         user: { id: "user-2", username: "teammate" },

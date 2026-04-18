@@ -12,9 +12,11 @@ import {
   isRecord,
 } from "@/lib/providers/management-api";
 import { resolveOAuthOwnership } from "@/lib/providers/oauth-ownership-resolver";
+import { inferOAuthProviderFromIdentifiers, isMeaningfulProviderValue } from "@/lib/providers/provider-inference";
 
 interface ClaimRequest {
   accountName: string;
+  provider: string;
 }
 
 interface ManagementAuthFile {
@@ -24,10 +26,45 @@ interface ManagementAuthFile {
   email?: string;
 }
 
+const OAUTH_PROVIDER_ALIASES: Record<string, string> = {
+  anthropic: "claude",
+  claude: "claude",
+  gemini: "gemini-cli",
+  "gemini-cli": "gemini-cli",
+  openai: "codex",
+  codex: "codex",
+  github: "copilot",
+  "github-copilot": "copilot",
+  copilot: "copilot",
+  antigravity: "antigravity",
+  iflow: "iflow",
+  qwen: "qwen",
+  kimi: "kimi",
+  kiro: "kiro",
+  cursor: "cursor",
+  codebuddy: "codebuddy",
+};
+
+function normalizeOAuthProviderAlias(provider: string | null | undefined): string | null {
+  if (typeof provider !== "string") {
+    return null;
+  }
+
+  const normalized = provider.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  return OAUTH_PROVIDER_ALIASES[normalized] ?? normalized;
+}
+
 function isClaimRequest(body: unknown): body is ClaimRequest {
   if (!body || typeof body !== "object" || Array.isArray(body)) return false;
   const obj = body as Record<string, unknown>;
-  return typeof obj.accountName === "string" && obj.accountName.trim().length > 0;
+  return typeof obj.accountName === "string"
+    && obj.accountName.trim().length > 0
+    && typeof obj.provider === "string"
+    && obj.provider.trim().length > 0;
 }
 
 function isManagementAuthFile(value: unknown): value is ManagementAuthFile {
@@ -48,6 +85,19 @@ function isManagementAuthFile(value: unknown): value is ManagementAuthFile {
   }
 
   return true;
+}
+
+function resolveCanonicalAuthFileProvider(file: ManagementAuthFile): string | null {
+  return normalizeOAuthProviderAlias(isMeaningfulProviderValue(file.provider) ? file.provider : undefined)
+    ?? normalizeOAuthProviderAlias(isMeaningfulProviderValue(file.type) ? file.type : undefined)
+    ?? normalizeOAuthProviderAlias(
+      inferOAuthProviderFromIdentifiers(undefined, file.name, file.email)
+    );
+}
+
+function hasExplicitCanonicalAuthFileProvider(file: ManagementAuthFile): boolean {
+  return normalizeOAuthProviderAlias(isMeaningfulProviderValue(file.provider) ? file.provider : undefined) !== null
+    || normalizeOAuthProviderAlias(isMeaningfulProviderValue(file.type) ? file.type : undefined) !== null;
 }
 
 export async function POST(request: NextRequest) {
@@ -74,10 +124,10 @@ export async function POST(request: NextRequest) {
   }
 
   if (!isClaimRequest(body)) {
-    return Errors.validation("Request body must include 'accountName' (string)");
+    return Errors.validation("Request body must include 'accountName' and 'provider' (string)");
   }
 
-  const { accountName } = body;
+  const { accountName, provider: requestedProvider } = body;
 
   try {
     const user = await prisma.user.findUnique({
@@ -120,19 +170,28 @@ export async function POST(request: NextRequest) {
       return Errors.badGateway("Invalid management API response");
     }
 
-    const matchingFile = getData.files.find((file) => {
-      return isRecord(file) && file.name === accountName;
-    });
+    const requestedCanonicalProvider = normalizeOAuthProviderAlias(requestedProvider);
+    if (!requestedCanonicalProvider) {
+      return Errors.validation("Request body must include 'accountName' and 'provider' (string)");
+    }
+
+    const candidateFiles = getData.files.filter(
+      (file): file is ManagementAuthFile => isManagementAuthFile(file) && file.name === accountName
+    );
+
+    const matchingFile = candidateFiles.find((file) => {
+      if (!hasExplicitCanonicalAuthFileProvider(file)) {
+        return false;
+      }
+
+      return resolveCanonicalAuthFileProvider(file) === requestedCanonicalProvider;
+    }) ?? candidateFiles.find((file) => resolveCanonicalAuthFileProvider(file) === requestedCanonicalProvider);
 
     if (!matchingFile) {
       return Errors.notFound("Auth file not found in CLIProxyAPIPlus");
     }
 
-    if (!isManagementAuthFile(matchingFile)) {
-      return Errors.badGateway("Invalid management API response");
-    }
-
-    const provider = matchingFile.provider || matchingFile.type;
+    const provider = resolveCanonicalAuthFileProvider(matchingFile);
     if (!provider) {
       return Errors.badGateway("Invalid management API response");
     }

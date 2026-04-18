@@ -146,7 +146,7 @@ model ProviderOAuthOwnership {
   id           String    @id @default(cuid())
   userId       String
   provider     String
-  accountName  String    @unique
+  accountName  String
   accountEmail String?
   createdAt    DateTime  @default(now())
 
@@ -156,6 +156,7 @@ model ProviderOAuthOwnership {
   @@index([provider])
   @@index([userId, provider])
   @@index([accountEmail])
+  @@unique([provider, accountName])
   @@map("provider_oauth_ownerships")
 }
 

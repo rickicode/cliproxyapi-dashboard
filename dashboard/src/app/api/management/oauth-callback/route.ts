@@ -11,6 +11,10 @@ import {
   type OAuthAutoClaimClassification,
 } from "@/lib/providers/oauth-auto-claim";
 import { resolveOAuthOwnership } from "@/lib/providers/oauth-ownership-resolver";
+import {
+  inferOAuthProviderFromIdentifiers,
+  isMeaningfulProviderValue,
+} from "@/lib/providers/provider-inference";
 
 const PROVIDERS = {
   CLAUDE: "claude",
@@ -48,6 +52,25 @@ const PROVIDER_MATCH_ALIASES: Record<Provider, readonly string[]> = {
   [PROVIDERS.KIRO]: ["kiro"],
   [PROVIDERS.CURSOR]: ["cursor"],
   [PROVIDERS.CODEBUDDY]: ["codebuddy"],
+};
+
+const PROVIDER_ALIAS_TO_CANONICAL: Record<string, Provider> = {
+  claude: PROVIDERS.CLAUDE,
+  anthropic: PROVIDERS.CLAUDE,
+  "gemini-cli": PROVIDERS.GEMINI_CLI,
+  gemini: PROVIDERS.GEMINI_CLI,
+  codex: PROVIDERS.CODEX,
+  openai: PROVIDERS.CODEX,
+  antigravity: PROVIDERS.ANTIGRAVITY,
+  iflow: PROVIDERS.IFLOW,
+  qwen: PROVIDERS.QWEN,
+  kimi: PROVIDERS.KIMI,
+  copilot: PROVIDERS.COPILOT,
+  github: PROVIDERS.COPILOT,
+  "github-copilot": PROVIDERS.COPILOT,
+  kiro: PROVIDERS.KIRO,
+  cursor: PROVIDERS.CURSOR,
+  codebuddy: PROVIDERS.CODEBUDDY,
 };
 
 const CLIPROXYAPI_BASE = process.env.CLIPROXYAPI_MANAGEMENT_URL?.replace("/v0/management", "") || "http://cliproxyapi:8317";
@@ -109,6 +132,7 @@ const sanitizeAuthFileEntry = (entry: unknown): AuthFileEntry | null => {
 };
 
 interface OAuthOwnershipRecord {
+  provider: string;
   accountName: string;
   userId: string;
   user?: {
@@ -144,6 +168,48 @@ const matchesAuthFileProvider = (
   const fileName = fileNameRaw.toLowerCase();
   return aliases.some((alias) => fileProvider === alias || fileName.includes(alias));
 };
+
+const resolveAuthFileProviderKey = (
+  file: AuthFileEntry,
+  provider: Provider
+): string => {
+  const explicitProvider = normalizeProviderAlias(
+    isMeaningfulProviderValue(file.provider)
+      ? file.provider
+      : isMeaningfulProviderValue(file.type)
+        ? file.type
+        : undefined
+  );
+  if (explicitProvider) {
+    return explicitProvider;
+  }
+
+  const inferredProvider = normalizeProviderAlias(
+    inferOAuthProviderFromIdentifiers(undefined, file.name, file.email) ?? undefined
+  );
+  if (inferredProvider) {
+    return inferredProvider;
+  }
+
+  return matchesAuthFileProvider(provider, "", file.name) ? provider : "";
+};
+
+const buildAuthFileScopeKey = (file: AuthFileEntry, provider: Provider): string => {
+  return `${resolveAuthFileProviderKey(file, provider)}:${file.name}`;
+};
+
+function normalizeProviderAlias(value: string | undefined): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+
+  return PROVIDER_ALIAS_TO_CANONICAL[normalized] ?? normalized;
+}
 
 const parseRequestBody = (body: unknown): OAuthCallbackRequestBody | null => {
   if (!isRecord(body)) return null;
@@ -217,10 +283,10 @@ const findNewAuthFilesByDiff = (
   after: AuthFileEntry[],
   provider: Provider
 ): AuthFileEntry[] => {
-  const beforeNames = new Set(before.map((f) => f.name));
+  const beforeScopeKeys = new Set(before.map((file) => buildAuthFileScopeKey(file, provider)));
 
   return after.filter((file) => {
-    if (beforeNames.has(file.name)) return false;
+    if (beforeScopeKeys.has(buildAuthFileScopeKey(file, provider))) return false;
 
     const fileProvider = (file.provider || file.type || "").toLowerCase();
     const fileNameLower = file.name.toLowerCase();
@@ -269,7 +335,10 @@ const findUnclaimedAuthFiles = async (
   if (providerFiles.length === 0) return [];
 
   const existingOwnerships = await prisma.providerOAuthOwnership.findMany({
-    where: { accountName: { in: providerFiles.map((f) => f.name) } },
+    where: {
+      provider,
+      accountName: { in: providerFiles.map((f) => f.name) },
+    },
     select: { accountName: true },
   });
 
@@ -279,12 +348,19 @@ const findUnclaimedAuthFiles = async (
 
 const buildAutoClaimCandidates = (
   files: AuthFileEntry[],
-  ownerships: OAuthOwnershipRecord[]
+  ownerships: OAuthOwnershipRecord[],
+  provider: Provider
 ): OAuthAutoClaimCandidate[] => {
-  const ownershipMap = new Map(ownerships.map((ownership) => [ownership.accountName, ownership]));
+  const ownershipMap = new Map(
+    ownerships.map((ownership) => [
+      `${ownership.provider}:${ownership.accountName}`,
+      ownership,
+    ])
+  );
 
   return files.map((file) => {
-    const ownership = ownershipMap.get(file.name);
+    const fileProvider = resolveAuthFileProviderKey(file, provider);
+    const ownership = ownershipMap.get(`${fileProvider}:${file.name}`);
     return {
       accountName: file.name,
       accountEmail: file.email || null,
@@ -294,11 +370,17 @@ const buildAutoClaimCandidates = (
   });
 };
 
-const fetchOwnershipRecords = async (accountNames: string[]): Promise<OAuthOwnershipRecord[]> => {
+const fetchOwnershipRecords = async (
+  provider: Provider,
+  accountNames: string[]
+): Promise<OAuthOwnershipRecord[]> => {
   if (accountNames.length === 0) return [];
 
   const ownerships = await prisma.providerOAuthOwnership.findMany({
-    where: { accountName: { in: accountNames } },
+    where: {
+      provider,
+      accountName: { in: accountNames },
+    },
     include: { user: { select: { id: true, username: true } } },
   });
 
@@ -307,15 +389,18 @@ const fetchOwnershipRecords = async (accountNames: string[]): Promise<OAuthOwner
 
 const normalizeAutoClaimResult = async ({
   currentUserId,
+  provider,
   candidateFiles,
 }: {
   currentUserId: string;
+  provider: Provider;
   candidateFiles: AuthFileEntry[];
 }): Promise<OAuthCallbackAutoClaimResponse> => {
   try {
     const candidates = buildAutoClaimCandidates(
       candidateFiles,
-      await fetchOwnershipRecords(candidateFiles.map((file) => file.name))
+      await fetchOwnershipRecords(provider, candidateFiles.map((file) => file.name)),
+      provider
     );
 
     const classification = classifyOAuthAutoClaim({
@@ -462,8 +547,8 @@ export async function POST(request: NextRequest) {
 
     const preCallbackSnapshot = await fetchAuthFiles();
     const preCallbackFiles = preCallbackSnapshot?.files ?? null;
-    const preCallbackNames = preCallbackFiles
-      ? new Set(preCallbackFiles.map((f) => f.name))
+    const preCallbackScopeKeys = preCallbackFiles
+      ? new Set(preCallbackFiles.map((file) => buildAuthFileScopeKey(file, provider)))
       : null;
 
     if (PROVIDERS_WITH_CALLBACK.has(provider)) {
@@ -567,9 +652,9 @@ export async function POST(request: NextRequest) {
         }
 
         if (unclaimedCandidates.length > 1) {
-          if (PROVIDERS_WITH_CALLBACK.has(provider) && preCallbackNames) {
+          if (PROVIDERS_WITH_CALLBACK.has(provider) && preCallbackScopeKeys) {
             const newAndUnclaimed = unclaimedCandidates.filter(
-              (f) => !preCallbackNames.has(f.name)
+              (file) => !preCallbackScopeKeys.has(buildAuthFileScopeKey(file, provider))
             );
             if (newAndUnclaimed.length === 1) {
               candidateFiles = newAndUnclaimed;
@@ -619,6 +704,7 @@ export async function POST(request: NextRequest) {
     } else {
       const initialAutoClaim = await normalizeAutoClaimResult({
         currentUserId: session.userId,
+        provider,
         candidateFiles,
       });
 

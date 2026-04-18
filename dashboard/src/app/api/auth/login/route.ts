@@ -4,6 +4,7 @@ import { verifyPassword } from "@/lib/auth/password";
 import { signToken } from "@/lib/auth/jwt";
 import { createSession } from "@/lib/auth/session";
 import { checkRateLimit } from "@/lib/auth/rate-limit";
+import { validateOrigin } from "@/lib/auth/origin";
 import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
@@ -23,6 +24,11 @@ export async function POST(request: NextRequest) {
     const forwardedFor = request.headers.get("x-forwarded-for");
     const ipAddress =
       forwardedFor?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
+
+    const originError = validateOrigin(request);
+    if (originError) {
+      return originError;
+    }
 
     const rateLimit = checkRateLimit(
       `login:${ipAddress}`,

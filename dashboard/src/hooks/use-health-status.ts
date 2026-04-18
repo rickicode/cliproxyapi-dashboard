@@ -9,19 +9,15 @@ export interface HealthStatusData {
   raw: unknown;
 }
 
-const healthFetcher = async (url: string): Promise<HealthStatusData> => {
+export const healthFetcher = async (url: string): Promise<HealthStatusData> => {
   const start = performance.now();
   try {
     const res = await fetch(url, { cache: "no-store" });
     const end = performance.now();
     const latencyMs = Math.round(end - start);
 
-    if (!res.ok) {
-      return { healthy: false, latencyMs: -1, raw: null };
-    }
-
     const data: unknown = await res.json();
-    return { healthy: true, latencyMs, raw: data };
+    return { healthy: res.ok, latencyMs, raw: data };
   } catch {
     return { healthy: false, latencyMs: -1, raw: null };
   }

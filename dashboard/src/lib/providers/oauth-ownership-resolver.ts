@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 
 export interface OAuthOwnershipResolverOwnership {
   id: string;
@@ -88,19 +89,17 @@ export async function resolveOAuthOwnership({
   const normalizedEmail = normalizeEmail(accountEmail);
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const exactMatch = await tx.providerOAuthOwnership.findUnique({
-        where: { accountName },
+        where: {
+          provider_accountName: {
+            provider,
+            accountName,
+          },
+        },
       });
 
       if (exactMatch) {
-        if (exactMatch.provider !== provider) {
-          return {
-            kind: "ambiguous",
-            ownerships: [exactMatch],
-          } satisfies OAuthOwnershipResolution;
-        }
-
         if (exactMatch.userId !== currentUserId) {
           return {
             kind: "claimed_by_other_user",

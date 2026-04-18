@@ -239,13 +239,15 @@ describe("resolveOAuthOwnership", () => {
     expect(mockTx.providerOAuthOwnership.findMany).not.toHaveBeenCalled();
   });
 
-  it("returns ambiguous for an exact accountName match when the provider differs", async () => {
-    mockTx.providerOAuthOwnership.findUnique.mockResolvedValueOnce({
+  it("looks up exact matches with provider-scoped account names", async () => {
+    mockTx.providerOAuthOwnership.findUnique.mockResolvedValueOnce(null);
+    mockTx.providerOAuthOwnership.findMany.mockResolvedValueOnce([]);
+    mockTx.providerOAuthOwnership.create.mockResolvedValueOnce({
       id: "ownership-4b",
-      userId: "user-2",
-      provider: "gemini",
+      userId: "user-1",
+      provider: "claude",
       accountName: "claude_user@example.com.json",
-      accountEmail: "other@example.com",
+      accountEmail: "user@example.com",
     });
 
     await expect(
@@ -256,21 +258,84 @@ describe("resolveOAuthOwnership", () => {
         accountEmail: "user@example.com",
       })
     ).resolves.toEqual({
-      kind: "ambiguous",
-      ownerships: [
-        {
-          id: "ownership-4b",
-          userId: "user-2",
-          provider: "gemini",
-          accountName: "claude_user@example.com.json",
-          accountEmail: "other@example.com",
-        },
-      ],
+      kind: "claimed",
+      ownership: {
+        id: "ownership-4b",
+        userId: "user-1",
+        provider: "claude",
+        accountName: "claude_user@example.com.json",
+        accountEmail: "user@example.com",
+      },
     });
 
-    expect(mockTx.providerOAuthOwnership.findMany).not.toHaveBeenCalled();
-    expect(mockTx.providerOAuthOwnership.create).not.toHaveBeenCalled();
+    expect(mockTx.providerOAuthOwnership.findUnique).toHaveBeenCalledWith({
+      where: {
+        provider_accountName: {
+          provider: "claude",
+          accountName: "claude_user@example.com.json",
+        },
+      },
+    });
+    expect(mockTx.providerOAuthOwnership.findMany).toHaveBeenCalledWith({
+      where: {
+        provider: "claude",
+        accountEmail: "user@example.com",
+      },
+    });
     expect(mockTx.providerOAuthOwnership.update).not.toHaveBeenCalled();
+  });
+
+  it("creates a new claim when the same accountName already exists for another provider", async () => {
+    mockTx.providerOAuthOwnership.findUnique.mockResolvedValueOnce(null);
+    mockTx.providerOAuthOwnership.findMany.mockResolvedValueOnce([]);
+    mockTx.providerOAuthOwnership.create.mockResolvedValueOnce({
+      id: "ownership-4c",
+      userId: "user-1",
+      provider: "claude",
+      accountName: "shared@example.com.json",
+      accountEmail: "shared@example.com",
+    });
+
+    await expect(
+      resolveOAuthOwnership({
+        currentUserId: "user-1",
+        provider: "claude",
+        accountName: "shared@example.com.json",
+        accountEmail: "shared@example.com",
+      })
+    ).resolves.toEqual({
+      kind: "claimed",
+      ownership: {
+        id: "ownership-4c",
+        userId: "user-1",
+        provider: "claude",
+        accountName: "shared@example.com.json",
+        accountEmail: "shared@example.com",
+      },
+    });
+
+    expect(mockTx.providerOAuthOwnership.findUnique).toHaveBeenCalledWith({
+      where: {
+        provider_accountName: {
+          provider: "claude",
+          accountName: "shared@example.com.json",
+        },
+      },
+    });
+    expect(mockTx.providerOAuthOwnership.findMany).toHaveBeenCalledWith({
+      where: {
+        provider: "claude",
+        accountEmail: "shared@example.com",
+      },
+    });
+    expect(mockTx.providerOAuthOwnership.create).toHaveBeenCalledWith({
+      data: {
+        userId: "user-1",
+        provider: "claude",
+        accountName: "shared@example.com.json",
+        accountEmail: "shared@example.com",
+      },
+    });
   });
 
   it("prefers an exact accountName match even when a unique normalized-email fallback candidate would conflict", async () => {
