@@ -12,10 +12,10 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: main
 
-      - uses: JoshuaKGoldberg/all-contributors-auto-action@v0.5.0
+      - uses: JoshuaKGoldberg/all-contributors-auto-action@v0.6.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
