@@ -15,6 +15,13 @@
 
 set -euo pipefail
 
+if [ ! -t 0 ]; then
+    echo "[ERROR] This installer requires an interactive terminal."
+    echo "[ERROR] Run it directly in an SSH shell or terminal session."
+    echo "[ERROR] For full manual/server instructions, see docs/INSTALLATION.md"
+    exit 1
+fi
+
 # Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
