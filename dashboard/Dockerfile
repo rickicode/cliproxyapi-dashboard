@@ -15,6 +15,7 @@ COPY public ./public
 COPY src ./src
 COPY messages ./messages
 COPY prisma ./prisma
+COPY scripts ./scripts
 
 # ARG is not persisted in image layers — safe for build-time placeholders
 ARG DATABASE_URL="postgresql://build:build@localhost:5432/build"
