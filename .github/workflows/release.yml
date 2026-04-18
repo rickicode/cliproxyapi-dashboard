@@ -1,9 +1,6 @@
-name: Release
+name: Release Orchestration
 
 on:
-  push:
-    tags:
-      - "dashboard-v*"
   workflow_dispatch:
     inputs:
       action:
@@ -12,27 +9,18 @@ on:
         type: choice
         options:
           - create-release
-          - build-existing-tag
         default: create-release
-      tag_name:
-        description: "Existing tag to build (only for 'build-existing-tag', e.g. dashboard-v0.1.50)"
-        required: false
 
 permissions:
   contents: write
   pull-requests: write
-  packages: write
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}/dashboard
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  # Run Release Please to create/update a release PR, then merge and tag.
-  # Only runs for the manual create-release path.
   release-please:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'create-release' }}
     outputs:
       release_created: ${{ steps.resolve.outputs.release_created }}
       tag_name: ${{ steps.resolve.outputs.tag_name }}
@@ -43,8 +31,6 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Release-Please outputs use component prefix (dashboard--) for multi-package repos.
-      # Support both prefixed and non-prefixed keys for robustness.
       - name: Resolve release outputs
         id: resolve
         env:
@@ -56,255 +42,16 @@ jobs:
           echo "tag_name=${RP_TAG_NAME}" >> "$GITHUB_OUTPUT"
           echo "version=${RP_VERSION}" >> "$GITHUB_OUTPUT"
 
-          if [ "${RP_RELEASE_CREATED}" = "true" ]; then
-            echo "✅ Release created: ${RP_TAG_NAME} (${RP_VERSION})"
-          else
-            echo "ℹ️ No release created — Release Please PR opened/updated. Merge the PR, then run this workflow again."
-          fi
-
-  tag-contributors:
-    runs-on: ubuntu-latest
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
-    continue-on-error: true
-    steps:
-      - name: Add contributors to release notes
+      - name: Explain result
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+          RELEASE_CREATED: ${{ steps.resolve.outputs.release_created }}
+          TAG_NAME: ${{ steps.resolve.outputs.tag_name }}
+          VERSION: ${{ steps.resolve.outputs.version }}
         run: |
-          PREV_TAG=$(gh api "repos/${{ github.repository }}/releases" \
-            --jq "[.[] | select(.tag_name != \"${TAG_NAME}\")] | first | .tag_name" 2>&1) || PREV_TAG=""
-
-          if [ -z "$PREV_TAG" ] || echo "$PREV_TAG" | grep -q "Not Found"; then
-            echo "No previous release found, skipping"
-            exit 0
-          fi
-
-          CONTRIBUTORS=$(gh api "repos/${{ github.repository }}/compare/${PREV_TAG}...${TAG_NAME}" \
-            --jq '[.commits[].author.login // empty] | unique | map(select(. != "github-actions[bot]" and . != "dependabot[bot]" and . != "renovate[bot]")) | map("@" + .) | join(", ")' 2>/dev/null || echo "")
-
-          if [ -z "$CONTRIBUTORS" ]; then
-            echo "No external contributors found"
-            exit 0
-          fi
-
-          CURRENT_BODY=$(gh api "repos/${{ github.repository }}/releases/tags/${TAG_NAME}" --jq '.body')
-          NEW_BODY=$(printf '%s\n\n## Contributors\n\nThank you to the following contributors: %s' "${CURRENT_BODY}" "${CONTRIBUTORS}")
-
-          gh api "repos/${{ github.repository }}/releases/tags/${TAG_NAME}" \
-            -X PATCH \
-            -f body="${NEW_BODY}"
-
-          echo "Done"
-
-  # Build each platform natively in parallel — no QEMU emulation needed.
-  # amd64 on self-hosted (Hetzner), arm64 on GitHub's native ARM runner.
-  build:
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - platform: linux/amd64
-            runner: self-hosted
-            suffix: amd64
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-            suffix: arm64
-    runs-on: ${{ matrix.runner }}
-    needs: [release-please]
-    if: >-
-      always() &&
-      (startsWith(github.ref, 'refs/tags/dashboard-v') ||
-       needs.release-please.outputs.release_created == 'true' ||
-       (github.event.inputs.action == 'build-existing-tag' && github.event.inputs.tag_name != ''))
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: >-
-            ${{
-              github.event_name == 'push' && github.ref ||
-              (github.event.inputs.action == 'build-existing-tag' && format('refs/tags/{0}', github.event.inputs.tag_name)) ||
-              format('refs/tags/{0}', needs.release-please.outputs.tag_name)
-            }}
-
-      - name: Resolve version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            TAG="${{ github.ref_name }}"
-          elif [ "${{ github.event.inputs.action }}" = "build-existing-tag" ]; then
-            TAG="${{ github.event.inputs.tag_name }}"
+          if [ "${RELEASE_CREATED}" = "true" ]; then
+            echo "✅ Release created: ${TAG_NAME} (${VERSION})"
+            echo "📦 Tag push will trigger the release-build workflow automatically."
           else
-            TAG="${{ needs.release-please.outputs.tag_name }}"
+            echo "ℹ️ No release tag was created. Release Please opened or updated a PR only."
+            echo "ℹ️ Build/publish will happen only after a real dashboard-v* tag exists."
           fi
-          VERSION=$(echo "$TAG" | sed 's/^.*v//')
-          echo "tag_name=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
-             [ "${{ github.event.inputs.action }}" = "create-release" ] && \
-             [ "${{ needs.release-please.outputs.release_created }}" = "true" ]; then
-            echo "publish_channel_tags=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish_channel_tags=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build and push by digest
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          context: ./dashboard
-          file: ./dashboard/Dockerfile
-          platforms: ${{ matrix.platform }}
-          build-args: |
-            DASHBOARD_VERSION=${{ steps.version.outputs.tag_name }}
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-
-      - name: Export digest
-        run: |
-          rm -rf /tmp/digests
-          mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
-      - name: Upload digest
-        uses: actions/upload-artifact@v7
-        with:
-          name: digest-${{ matrix.suffix }}
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  # Merge per-platform images into a single multi-arch manifest.
-  merge:
-    runs-on: ubuntu-latest
-    needs: [release-please, build]
-    if: ${{ always() && !cancelled() && needs.build.result == 'success' }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: >-
-            ${{
-              github.event_name == 'push' && github.ref ||
-              (github.event.inputs.action == 'build-existing-tag' && format('refs/tags/{0}', github.event.inputs.tag_name)) ||
-              format('refs/tags/{0}', needs.release-please.outputs.tag_name)
-            }}
-
-      - name: Resolve version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            TAG="${{ github.ref_name }}"
-          elif [ "${{ github.event.inputs.action }}" = "build-existing-tag" ]; then
-            TAG="${{ github.event.inputs.tag_name }}"
-          else
-            TAG="${{ needs.release-please.outputs.tag_name }}"
-          fi
-          VERSION=$(echo "$TAG" | sed 's/^.*v//')
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag_name=${TAG}" >> "$GITHUB_OUTPUT"
-
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
-             [ "${{ github.event.inputs.action }}" = "create-release" ] && \
-             [ "${{ needs.release-please.outputs.release_created }}" = "true" ]; then
-            echo "publish_channel_tags=true" >> "$GITHUB_OUTPUT"
-            echo "tag_sha=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish_channel_tags=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Download digests
-        uses: actions/download-artifact@v8
-        with:
-          path: /tmp/digests
-          pattern: digest-*
-          merge-multiple: true
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create and push manifest
-        working-directory: /tmp/digests
-        run: |
-          TAGS="-t ${{ env.IMAGE }}:${{ steps.version.outputs.version }}"
-
-          if [ "${{ steps.version.outputs.publish_channel_tags }}" = "true" ]; then
-            TAGS="$TAGS -t ${{ env.IMAGE }}:latest"
-            TAGS="$TAGS -t ${{ env.IMAGE }}:sha-${{ steps.version.outputs.tag_sha }}"
-          fi
-
-          SOURCES=""
-          for digest in *; do
-            SOURCES="$SOURCES ${{ env.IMAGE }}@sha256:$digest"
-          done
-
-          echo "📦 Creating multi-arch manifest..."
-
-          if [ "${{ steps.version.outputs.publish_channel_tags }}" = "true" ]; then
-            echo "   Tags: ${{ steps.version.outputs.version }}, latest, sha-${{ steps.version.outputs.tag_sha }}"
-          else
-            echo "   Tags: ${{ steps.version.outputs.version }}"
-          fi
-
-          echo "   Sources: $SOURCES"
-
-          docker buildx imagetools create $TAGS $SOURCES
-
-  # Update version.json so dashboards can check for updates without GitHub API rate limits.
-  update-version-json:
-    runs-on: ubuntu-latest
-    needs: [release-please, merge]
-    if: >-
-      needs.merge.result == 'success' &&
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.action == 'create-release' &&
-      needs.release-please.outputs.release_created == 'true'
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: main
-
-      - name: Update version.json
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_PLEASE_TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
-          RELEASE_PLEASE_VERSION: ${{ needs.release-please.outputs.version }}
-        run: |
-          TAG_NAME="${RELEASE_PLEASE_TAG_NAME}"
-          VERSION="${RELEASE_PLEASE_VERSION}"
-
-          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
-          RELEASE_NOTES=$(gh release view "${TAG_NAME}" --json body -q .body 2>/dev/null | head -c 2000 || echo "")
-
-          jq -n \
-            --arg version "${VERSION}" \
-            --arg tag "${TAG_NAME}" \
-            --arg url "${RELEASE_URL}" \
-            --arg notes "${RELEASE_NOTES}" \
-            '{version: $version, tag: $tag, releaseUrl: $url, releaseNotes: $notes}' \
-            > version.json
-
-      - name: Commit version.json
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add version.json
-          git diff --staged --quiet && echo "No changes to commit" && exit 0
-          VERSION="${{ needs.release-please.outputs.version }}"
-          git commit -m "chore: update version.json to ${VERSION}"
-          git push
