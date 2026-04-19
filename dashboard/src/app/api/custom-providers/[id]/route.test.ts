@@ -42,7 +42,7 @@ vi.mock("@/lib/audit", () => ({
 
 vi.mock("@/lib/env", () => ({
   env: {
-    CLIPROXYAPI_MANAGEMENT_URL: "http://localhost:3000",
+    CLIPROXYAPI_MANAGEMENT_URL: "http://localhost:8317",
     MANAGEMENT_API_KEY: "test-management-key",
   },
 }));

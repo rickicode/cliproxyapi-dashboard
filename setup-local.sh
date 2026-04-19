@@ -31,6 +31,17 @@ log_error() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.local.yml"
 ENV_FILE="${SCRIPT_DIR}/.env"
+GENERATED_ENV_REPLACED=0
+
+compose_cmd() {
+    local compose_args=(-f "$COMPOSE_FILE")
+
+    if [ -f "$ENV_FILE" ]; then
+        compose_args=(--env-file "$ENV_FILE" "${compose_args[@]}")
+    fi
+
+    docker compose "${compose_args[@]}" "$@"
+}
 
 show_usage() {
     echo "Usage: ./setup-local.sh [--down] [--reset]"
@@ -64,6 +75,23 @@ ensure_openssl() {
     fi
 }
 
+get_management_api_key_from_env() {
+    if [ ! -f "$ENV_FILE" ]; then
+        log_error ".env not found. Generate it before creating config.local.yaml."
+        exit 1
+    fi
+
+    local env_management_api_key
+    env_management_api_key="$(grep '^MANAGEMENT_API_KEY=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')"
+
+    if [ -z "$env_management_api_key" ]; then
+        log_error "MANAGEMENT_API_KEY is missing or empty in .env. Regenerate .env or add a valid MANAGEMENT_API_KEY before continuing."
+        exit 1
+    fi
+
+    printf '%s' "$env_management_api_key"
+}
+
 ensure_docker_running() {
     if ! command -v docker &>/dev/null; then
         log_error "Docker not found. Install Docker Desktop: https://www.docker.com/products/docker-desktop/"
@@ -82,11 +110,11 @@ ensure_docker_running() {
 }
 
 compose_down() {
-    docker compose -f "$COMPOSE_FILE" down
+    compose_cmd down
 }
 
 compose_reset() {
-    docker compose -f "$COMPOSE_FILE" down -v
+    compose_cmd down -v
     rm -f "$ENV_FILE" "${SCRIPT_DIR}/config.local.yaml"
 }
 
@@ -156,14 +184,20 @@ EOF
         log_info "Perplexity Pro Sidecar disabled (can be enabled later by adding COMPOSE_PROFILES=perplexity to .env)"
     fi
 
+    GENERATED_ENV_REPLACED=1
     log_success "Created .env in project root"
 }
 
 generate_config_yaml() {
     local config_file="${SCRIPT_DIR}/config.local.yaml"
-    if [ -f "$config_file" ]; then
+    if [ -f "$config_file" ] && [ "$GENERATED_ENV_REPLACED" -ne 1 ]; then
         return 0
     fi
+
+    ensure_openssl
+
+    local management_api_key
+    management_api_key="$(get_management_api_key_from_env)"
 
     local api_key
     api_key="sk-local-$(openssl rand -hex 16)"
@@ -174,7 +208,7 @@ port: 8317
 auth-dir: "/root/.cli-proxy-api"
 remote-management:
   allow-remote: true
-  secret-key: "${MANAGEMENT_API_KEY:-$(grep MANAGEMENT_API_KEY "$ENV_FILE" 2>/dev/null | cut -d= -f2)}"
+  secret-key: "${management_api_key}"
 api-keys:
   - "${api_key}"
 request-retry: 3
@@ -184,6 +218,8 @@ quota-exceeded:
 routing:
   strategy: "round-robin"
 EOF
+
+    chmod 600 "$config_file"
 
     log_success "Created config.local.yaml (API key: ${api_key})"
 }
@@ -199,6 +235,16 @@ wait_for_health() {
         "cliproxyapi-docker-proxy"
         "cliproxyapi-dashboard"
     )
+
+    local compose_profiles=""
+    if [ -f "$ENV_FILE" ]; then
+        compose_profiles="$(grep '^COMPOSE_PROFILES=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+        compose_profiles="${compose_profiles// /}"
+    fi
+
+    if [[ ",${compose_profiles}," == *",perplexity,"* ]]; then
+        containers+=("cliproxyapi-perplexity-sidecar")
+    fi
 
     while true; do
         local now elapsed
@@ -258,7 +304,7 @@ main() {
     generate_config_yaml
 
     log_info "Starting local stack..."
-    docker compose -f "$COMPOSE_FILE" up -d
+    compose_cmd up -d
 
     log_info "Waiting for services to become healthy..."
     wait_for_health
