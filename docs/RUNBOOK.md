@@ -19,43 +19,28 @@ Returns 200 if the dashboard is running. Does not check database connectivity.
 POST /api/admin/deploy
 ```
 
-### Rebuild / Update Paths
+### Runtime-bundle operations
 
-Use the update path that matches the desired blast radius. For normal maintenance, `./rebuild.sh` is the recommended update path and the raw Compose commands are lower-level/manual alternatives. The repository root `docker-compose.yml` is the production source of truth; `docker-compose.local.yml` is local-only.
+Installer-managed production deployments run from `/opt/cliproxyapi`.
 
-```bash
-# Preserve CLIProxyAPI continuity; only dashboard is recreated
-./rebuild.sh --dashboard-only
-
-# Continuity-preserving default; no full stack tear-down
-./rebuild.sh
-
-# Disruptive full restart of the compose stack
-./rebuild.sh --full-recreate
-```
-
-- `--dashboard-only`: safest option when only the dashboard image changed; it rebuilds the dashboard image from the current local checkout, recreates only that container, and waits for Compose readiness before reporting success.
-- default `./rebuild.sh`: recommended routine update path; it pulls newer images only for non-buildable services, rebuilds the dashboard image from the current local checkout, and applies updates with `docker compose up -d --wait`, so unaffected services keep running.
-- `--full-recreate`: uses the same pull/build scope as the default path, but intentionally follows it with `docker compose down` and a clean `docker compose up -d --wait`.
-
-If you need raw production Compose commands instead of `rebuild.sh`, run them from the repository root with the production env-file contract unless you have already exported equivalent variables in your shell:
+If you need raw production Compose commands, run them from the runtime bundle root:
 
 ```bash
-docker compose --env-file infrastructure/.env -f docker-compose.yml ps
-docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f
-docker compose --env-file infrastructure/.env -f docker-compose.yml up -d
-docker compose --env-file infrastructure/.env -f docker-compose.yml down
+cd /opt/cliproxyapi
+docker compose --env-file .env -f docker-compose.yml ps
+docker compose --env-file .env -f docker-compose.yml logs -f
+docker compose --env-file .env -f docker-compose.yml up -d
+docker compose --env-file .env -f docker-compose.yml down
 ```
-
-If you need a newer dashboard release, update the repository contents first (for example with `git pull`). `rebuild.sh` rebuilds from local source; it does not pull dashboard source from GHCR. It also does not automatically rebuild the optional `perplexity-sidecar` service.
 
 ### Production vs Local/Development
 
 #### Production
 
-- Use `./rebuild.sh`, `./rebuild.sh --dashboard-only`, or `./rebuild.sh --full-recreate` for normal updates.
-- Use `docker compose --env-file infrastructure/.env -f docker-compose.yml ...` only for direct operational tasks such as logs, `ps`, or manual troubleshooting.
+- Use `sudo systemctl restart cliproxyapi-stack` for the common restart path.
+- Use `docker compose --env-file .env -f docker-compose.yml ...` from `/opt/cliproxyapi` for direct operational tasks such as logs, `ps`, or manual troubleshooting.
 - If the install uses external/custom PostgreSQL, keep treating the bundled `postgres` service as inert and perform DB backups/restores through the external platform.
+- If the install uses Cloudflare Tunnel mode, also manage `cloudflared.service` separately.
 
 #### Local Development
 
@@ -108,9 +93,9 @@ docker exec -it cliproxyapi-postgres psql -U cliproxyapi -d cliproxyapi
 
 Production:
 1. Check systemd: `sudo systemctl status cliproxyapi-stack`
-2. Check containers: `docker compose --env-file infrastructure/.env -f docker-compose.yml ps`
-3. Check logs: `docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f dashboard`
-4. Verify `infrastructure/.env` contains the expected production values
+2. Check containers: `cd /opt/cliproxyapi && docker compose --env-file .env -f docker-compose.yml ps`
+3. Check logs: `cd /opt/cliproxyapi && docker compose --env-file .env -f docker-compose.yml logs -f dashboard`
+4. Verify `/opt/cliproxyapi/.env` contains the expected production values
 
 Local development:
 1. Check Docker is running: `docker info`
@@ -121,8 +106,8 @@ Local development:
 ### Database connection errors
 
 Production:
-1. Verify bundled PostgreSQL only if you are in Docker-managed DB mode: `docker compose --env-file infrastructure/.env -f docker-compose.yml ps postgres`
-2. Check `DATABASE_URL` and `POSTGRES_PASSWORD` in `infrastructure/.env`
+1. Verify bundled PostgreSQL only if you are in Docker-managed DB mode: `cd /opt/cliproxyapi && docker compose --env-file .env -f docker-compose.yml ps postgres`
+2. Check `DATABASE_URL` and `POSTGRES_PASSWORD` in `/opt/cliproxyapi/.env`
 3. Run migrations in the dashboard container or from `dashboard/` if schema is out of date
 
 Local development:
@@ -133,8 +118,10 @@ Local development:
 ### CLIProxyAPI unreachable
 
 Production:
-1. Check API container logs: `docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f cliproxyapi`
-2. Verify the API hostname resolves correctly and Caddy is healthy
+1. Check API container logs: `cd /opt/cliproxyapi && docker compose --env-file .env -f docker-compose.yml logs -f cliproxyapi`
+2. Verify the expected access path for your mode:
+   - domain mode: Caddy is healthy and hostnames resolve
+   - Cloudflare/local-IP mode: `http://SERVER_IP:8317` is reachable on the host/network
 3. Wait for healthchecks to settle after deploys
 
 Local development:
@@ -157,7 +144,7 @@ Settings → CLIProxyAPI Updates → Update
 # Or: POST /api/update
 ```
 
-If the proxy update is handled outside the dashboard UI, prefer `./rebuild.sh` over raw Compose update commands so the stack is refreshed without an unnecessary full shutdown. Remember that the default path only pulls non-buildable service images and rebuilds the dashboard from local source. It does not automatically rebuild optional buildable services such as `perplexity-sidecar`. Use `./rebuild.sh --full-recreate` only when a clean recreate is specifically required.
+If the proxy update is handled outside the dashboard UI, use the runtime-bundle compose commands or restart `cliproxyapi-stack` after updating the deployed runtime artifacts. Keep the flow rooted at `/opt/cliproxyapi` rather than a long-lived repo checkout.
 
 If the installation uses external/custom PostgreSQL, coordinate any database maintenance separately. Do not use bundled Postgres backup/restore expectations in that mode.
 

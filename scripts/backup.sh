@@ -6,7 +6,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BACKUP_DIR="$PROJECT_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="cliproxyapi_backup_${TIMESTAMP}.tar.gz"
-ENV_FILE="$PROJECT_DIR/infrastructure/.env"
+ENV_FILE="$PROJECT_DIR/.env"
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 
 normalize_env_value() {
@@ -88,7 +88,7 @@ echo "[INFO] Backing up Postgres database..."
 compose exec -T postgres pg_dump -U cliproxyapi -d cliproxyapi > "$TMP_DIR/database.sql"
 
 echo "[INFO] Backing up config.yaml..."
-cp "$PROJECT_DIR/infrastructure/config/config.yaml" "$TMP_DIR/config.yaml"
+cp "$PROJECT_DIR/config/config.yaml" "$TMP_DIR/config.yaml"
 
 echo "[INFO] Backing up auth directory..."
 AUTH_ARCHIVE_ARGS=()

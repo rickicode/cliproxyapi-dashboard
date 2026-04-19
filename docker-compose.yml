@@ -1,11 +1,11 @@
 # CLIProxyAPI + Dashboard Docker Compose Stack
 # Production source of truth.
 # Environment contract:
-# - Production values normally live in ./infrastructure/.env.
+# - Runtime values normally live in ./.env inside the runtime bundle.
 # - When invoking this root file directly, prefer:
-#   docker compose --env-file infrastructure/.env -f docker-compose.yml ...
-# - The legacy infrastructure/docker-compose.yml wrapper forwards to this file and keeps using
-#   infrastructure/.env for callers that still start from that location.
+#   docker compose --env-file .env -f docker-compose.yml ...
+# - Legacy repository entrypoints may still use infrastructure/.env, but runtime-bundle installs
+#   fetch this file into /opt/cliproxyapi and run it from there.
 # - Critical production secrets are required here on purpose so the source-of-truth file fails
 #   fast instead of silently accepting blank credentials.
 # Lifecycle intent:
@@ -59,9 +59,10 @@ services:
       retries: 5
       start_period: 10s
 
-  # CLIProxyAPI Service — requires ./infrastructure/config/config.yaml with `port: 8317`
+  # CLIProxyAPI Service — requires ./config/config.yaml with `port: 8317`
   # Port exposure contract:
-  # - 127.0.0.1:8317 stays loopback-only because Caddy fronts the main API/UI path.
+  # - Domain mode can keep API loopback-only by setting CLIPROXYAPI_BIND_ADDRESS=127.0.0.1.
+  # - No-domain modes can expose the API directly by setting CLIPROXYAPI_BIND_ADDRESS=0.0.0.0.
   # - The callback ports below remain host-exposed intentionally; OAuth/device-login flows from
   #   external provider pages must be able to reach the host directly on these fixed ports.
   cliproxyapi:
@@ -79,14 +80,14 @@ services:
       DEPLOY: production
       TZ: ${TZ:-}
     ports:
-      - "127.0.0.1:8317:8317"
+      - "${CLIPROXYAPI_BIND_ADDRESS:-127.0.0.1}:8317:8317"
       - "8085:8085"
       - "1455:1455"
       - "54545:54545"
       - "51121:51121"
       - "11451:11451"
     volumes:
-      - ./infrastructure/config/config.yaml:/CLIProxyAPI/config.yaml
+      - ./config/config.yaml:/CLIProxyAPI/config.yaml:ro
       - cliproxyapi_auths:/root/.cli-proxy-api
       - cliproxyapi_logs:/CLIProxyAPI/logs
     healthcheck:
@@ -185,9 +186,13 @@ services:
       DASHBOARD_URL: ${DASHBOARD_URL:-}
       DOCKER_HOST: tcp://docker-proxy:2375
       GITHUB_REPO: ${GITHUB_REPO:-itsmylife44/cliproxyapi-dashboard}
+    ports:
+      - "${DASHBOARD_BIND_ADDRESS:-127.0.0.1}:8318:8318"
     volumes:
       - ./docker-compose.yml:/opt/cliproxyapi/docker-compose.yml:ro
-      - ./infrastructure:/opt/cliproxyapi/infrastructure:ro
+      - ./config:/opt/cliproxyapi/config:ro
+      - ./scripts:/opt/cliproxyapi/scripts:ro
+      - ./metadata:/opt/cliproxyapi/metadata:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -203,6 +208,7 @@ services:
       start_period: 40s
 
   caddy:
+    profiles: ["caddy"]
     image: caddy:2-alpine
     container_name: cliproxyapi-caddy
     restart: unless-stopped
@@ -216,7 +222,7 @@ services:
       - "443:443"
       - "443:443/udp"
     volumes:
-      - ./infrastructure/config/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

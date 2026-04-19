@@ -12,21 +12,22 @@ Before installing, ensure you have:
 
 - **Operating System**: Ubuntu 20.04+ or Debian 11+ are the installer's supported Linux targets. Other Linux distributions may work for manual setups, but `install.sh` does not treat them as supported paths.
 - **Root Access**: Required for Docker and firewall configuration
-- **Domain Name**: A registered domain with DNS control
-- **Server**: VPS or dedicated server with public IP address
-- **Ports Available**: 80, 443, 8085, 1455, 54545, 51121, 11451
+- **Server**: VPS, dedicated server, or reachable LAN host
+- **Ports Available**:
+  - Domain mode: 80, 443, 8085, 1455, 54545, 51121, 11451
+  - No-domain modes: 8317, 8318, 8085, 1455, 54545, 51121, 11451
 
 ### Preflight Checklist
 
 Complete **before** running the installer:
 
-- [ ] **DNS Records Configured**: Set A records for `dashboard.yourdomain.com` and `api.yourdomain.com` pointing to your server IP
-- [ ] **DNS Propagated**: Verify records with `dig dashboard.yourdomain.com` (allow 5-15 minutes)
-- [ ] **Ports Available**: Confirm no services using ports 80, 443, 8085, 1455, 54545, 51121, 11451
 - [ ] **Root Access**: SSH access with `sudo` or root privileges
+- [ ] **Ports Available**: Confirm no conflicting services on the ports required by your chosen access mode
 - [ ] **First Admin Window**: Plan to create your admin account immediately after installation completes
+- [ ] **If using domain mode**: DNS records for dashboard/api hostnames already point at this server
+- [ ] **If using Cloudflare Tunnel mode**: Have your Cloudflare Tunnel token ready
 
-### DNS Configuration
+### DNS Configuration (domain mode only)
 
 Configure DNS A records for your domain **before installation**:
 
@@ -39,7 +40,7 @@ api.example.com        →  YOUR_SERVER_IP
 
 Replace `example.com` with your actual domain and `YOUR_SERVER_IP` with your server's public IP address.
 
-> **Critical**: DNS records must be live before first start. Caddy requests Let's Encrypt certificates immediately, which requires valid DNS.
+> **Critical**: DNS records must be live before first start in domain mode. Caddy requests Let's Encrypt certificates immediately, which requires valid DNS.
 
 > **Security Note**: Until you create the first admin account, the dashboard setup page is accessible to anyone who can reach your domain. Restrict access using firewall rules if needed, or complete setup immediately after installation.
 
@@ -56,24 +57,17 @@ sudo ./install.sh
 ![Quick Start](code-snippets/quick-start.png)
 
 The installer will:
-1. Prompt for domain and subdomain configuration
+1. Prompt for access mode: domain + bundled Caddy, Cloudflare Tunnel, or local IP only
 2. Prompt whether production data should live in the bundled Docker-managed PostgreSQL service or in an external/custom PostgreSQL instance (the bundled `postgres` container still remains present as an inert dependency placeholder in external DB mode)
 3. Install Docker and Docker Compose (if not already installed)
-4. Configure UFW firewall with required ports
+4. Configure UFW firewall with the ports required by the selected access mode
 5. Generate secure secrets (JWT_SECRET, MANAGEMENT_API_KEY, and `POSTGRES_PASSWORD` when using the bundled PostgreSQL service)
-6. Create the production environment file at `infrastructure/.env` with all required configuration
-7. Prepare the repository-root Docker Compose stack contract from your local checkout (configuration, env file, and startup wiring)
+6. Fetch the runtime bundle files into `/opt/cliproxyapi` from GitHub raw URLs
+7. Create the production environment file at `/opt/cliproxyapi/.env` and install metadata at `/opt/cliproxyapi/metadata/install-info.env`
 8. Create and enable a systemd service for startup on boot
+9. Install and configure `cloudflared` when Cloudflare Tunnel mode is selected
 9. Optionally set up automated daily or weekly backups when using the bundled PostgreSQL service
 10. Remove only the legacy installer-managed `/api/usage/collect` cron entry/comment because periodic usage collection is now handled internally by the dashboard app
-
-After installation, use the recommended update path that matches your maintenance window:
-
-- `./rebuild.sh --dashboard-only` rebuilds the `dashboard` image from your current local checkout and recreates only the `dashboard` container. It preserves `cliproxyapi` continuity.
-- `./rebuild.sh` is the recommended routine update path. It pulls newer images only for non-buildable services, rebuilds the `dashboard` image from your current local checkout, then runs `docker compose up -d --wait` without a full stack tear-down. Unchanged services stay up, but any service with a changed image can still be recreated individually.
-- `./rebuild.sh --full-recreate` is the disruptive option. It pulls newer images only for non-buildable services, rebuilds the `dashboard` image from your current local checkout, then runs `docker compose down` followed by `docker compose up -d --wait`, interrupting `cliproxyapi` and the rest of the stack.
-
-`rebuild.sh` only rebuilds the local `dashboard` source tree. It does not automatically rebuild other optional buildable services such as `perplexity-sidecar`; rebuild those manually if you maintain local changes there.
 
 ### Post-Installation
 
@@ -82,14 +76,15 @@ After installation completes, start the service manually:
 ```bash
 sudo systemctl start cliproxyapi-stack
 sudo systemctl status cliproxyapi-stack
-docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f
+cd /opt/cliproxyapi
+docker compose --env-file .env -f docker-compose.yml logs -f
 ```
 
-For later updates, prefer `./rebuild.sh` for continuity-preserving maintenance and reserve `./rebuild.sh --full-recreate` for cases where you explicitly want a full stack restart. If you expect a newer dashboard release, update this repository first (for example with `git pull`) because `rebuild.sh` rebuilds the dashboard image from the local source tree; it does not fetch dashboard source from GHCR. The same script does not rebuild optional buildable services such as `perplexity-sidecar`.
+Access after install depends on your selected mode:
 
-Access the dashboard at:
-- **Dashboard**: `https://dashboard.yourdomain.com`
-- **API**: `https://api.yourdomain.com`
+- **Domain mode**: `https://dashboard.yourdomain.com` and `https://api.yourdomain.com`
+- **Cloudflare Tunnel mode**: use the Cloudflare hostnames you configure, pointing them at `http://SERVER_IP:8318` and `http://SERVER_IP:8317`
+- **Local IP mode**: `http://SERVER_IP:8318` and `http://SERVER_IP:8317`
 
 > **Usage collection**: You do not need to configure an OS cron job for periodic usage collection. The dashboard app owns this scheduling internally and continues collecting usage data without an installer-managed cron dependency. If you run your own external automation against `POST /api/usage/collect`, that remains supported and the installer cleanup does not remove it.
 
@@ -251,69 +246,30 @@ echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
 
 ### 4. Create Environment File
 
-Choose the example that matches your database mode.
+For installer-managed deployments, `install.sh` generates `/opt/cliproxyapi/.env` for you. You normally do not create it by hand.
 
-#### Docker-managed PostgreSQL example
+Common values written there include:
 
-```bash
-cat > infrastructure/.env << EOF
-DOMAIN=example.com
-DASHBOARD_SUBDOMAIN=dashboard
-API_SUBDOMAIN=api
-DB_MODE=docker
-DATABASE_URL=postgresql://cliproxyapi:${POSTGRES_PASSWORD}@postgres:5432/cliproxyapi
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-JWT_SECRET=${JWT_SECRET}
-MANAGEMENT_API_KEY=${MANAGEMENT_API_KEY}
-COLLECTOR_API_KEY=$(openssl rand -hex 32)
-PROVIDER_ENCRYPTION_KEY=$(openssl rand -hex 32)
-CLIPROXYAPI_MANAGEMENT_URL=http://cliproxyapi:8317/v0/management
-INSTALL_DIR=$(pwd)
-TZ=UTC
-LOG_LEVEL=info
-DASHBOARD_URL=https://dashboard.example.com
-API_URL=https://api.example.com
-EOF
-
-# Secure the environment file
-chmod 600 infrastructure/.env
-```
-
-![Environment Setup](code-snippets/env-setup.png)
-
-Replace `example.com` with your actual domain.
-
-#### External/custom PostgreSQL example
+- `ACCESS_MODE`
+- `LOCAL_IP`
+- `DOMAIN`, `DASHBOARD_SUBDOMAIN`, `API_SUBDOMAIN` (domain mode only)
+- `DATABASE_URL`
+- `POSTGRES_PASSWORD` (bundled Docker Postgres mode only)
+- `JWT_SECRET`
+- `MANAGEMENT_API_KEY`
+- `DASHBOARD_URL`
+- `API_URL`
+- `CLIPROXYAPI_BIND_ADDRESS`
+- `DASHBOARD_BIND_ADDRESS`
+- `COMPOSE_PROFILES`
+- `CLOUDFLARE_TUNNEL_TOKEN` (Cloudflare mode only)
 
 ```bash
-EXTERNAL_DATABASE_URL='postgresql://dbuser:dbpass@db.example.net:5432/cliproxyapi'
-
-cat > infrastructure/.env << EOF
-DOMAIN=example.com
-DASHBOARD_SUBDOMAIN=dashboard
-API_SUBDOMAIN=api
-DB_MODE=external
-DATABASE_URL=${EXTERNAL_DATABASE_URL}
-JWT_SECRET=${JWT_SECRET}
-MANAGEMENT_API_KEY=${MANAGEMENT_API_KEY}
-COLLECTOR_API_KEY=$(openssl rand -hex 32)
-PROVIDER_ENCRYPTION_KEY=$(openssl rand -hex 32)
-CLIPROXYAPI_MANAGEMENT_URL=http://cliproxyapi:8317/v0/management
-INSTALL_DIR=$(pwd)
-TZ=UTC
-LOG_LEVEL=info
-DASHBOARD_URL=https://dashboard.example.com
-API_URL=https://api.example.com
-EOF
-
-chmod 600 infrastructure/.env
+sudo ls -l /opt/cliproxyapi/.env
+sudo sed -n '1,40p' /opt/cliproxyapi/.env
 ```
 
-> **Critical**: The `infrastructure/.env` file is generated by `install.sh` and must include the variables required for your chosen database mode. An empty or missing `.env` file will cause the stack to fail on startup. Do not commit this file to version control.
-
-> **Compose boundary**: Production Docker Compose operations now use the repository root `docker-compose.yml` as the source of truth. `docker-compose.local.yml` remains local-development-only. Any installer-managed `docker-compose.override.yml` is written at the repository root beside `docker-compose.yml` so root/systemd invocations load it automatically.
-
-> **Root override note**: In external proxy mode and webhook mode, the installer writes runtime overrides to the repository-root `docker-compose.override.yml` only when it can create that file itself. If a root override already exists, the installer leaves it unchanged and prints the exact `dashboard` snippet you must merge manually (for example `ports` for external proxy mode or `extra_hosts` for webhook mode).
+> **Critical**: `/opt/cliproxyapi/.env` is the active production env file for installer-managed runtime-bundle installs. Keep it secret, keep it readable only by privileged users, and do not commit it to version control.
 
 ### 4a. Choose a Database Mode
 
@@ -330,7 +286,7 @@ When using an external/custom database:
 
 ### 5. Configure CLIProxyAPIPlus
 
-API keys and AI providers can be configured through the Dashboard UI after first login. Alternatively, you can edit `infrastructure/config/config.yaml` directly.
+API keys and AI providers can be configured through the Dashboard UI after first login. Alternatively, you can edit `/opt/cliproxyapi/config/config.yaml` directly.
 
 Periodic usage collection does not require the old installer-managed cron setup. The dashboard app now runs the collector on its own, while `POST /api/usage/collect` remains available for manual or external integrations when needed. The installer only cleans up the legacy installer-managed cron entry/comment and leaves custom external automations intact.
 
@@ -338,12 +294,7 @@ If you need to onboard many Codex accounts at once, the Dashboard `Providers` pa
 
 ### 6. Create Systemd Service
 
-The installer writes this unit dynamically so the explicit service list matches your selected reverse-proxy/profile modes while preserving the current production Compose dependency contract:
-
-- integrated Caddy vs external reverse proxy
-- optional `perplexity-sidecar` profile enablement
-
-The manual example below reflects the default integrated-Caddy path. The `postgres` service remains in the explicit startup list even for external/custom PostgreSQL installs so the bundled container stays available as the inert dependency placeholder expected by the current runtime model.
+The installer writes this unit dynamically so it starts the runtime bundle from `/opt/cliproxyapi` and enables the correct profile set for your selected access mode.
 
 ```bash
 sudo tee /etc/systemd/system/cliproxyapi-stack.service > /dev/null << 'EOF'
@@ -357,8 +308,8 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=true
 WorkingDirectory=/opt/cliproxyapi
-ExecStart=/usr/bin/docker compose --env-file /opt/cliproxyapi/infrastructure/.env -f /opt/cliproxyapi/docker-compose.yml up -d --wait postgres caddy docker-proxy cliproxyapi dashboard
-ExecStop=/usr/bin/docker compose --env-file /opt/cliproxyapi/infrastructure/.env -f /opt/cliproxyapi/docker-compose.yml down
+ExecStart=/usr/bin/docker compose --env-file /opt/cliproxyapi/.env -f /opt/cliproxyapi/docker-compose.yml up -d --wait postgres docker-proxy cliproxyapi dashboard
+ExecStop=/usr/bin/docker compose --env-file /opt/cliproxyapi/.env -f /opt/cliproxyapi/docker-compose.yml down
 TimeoutStartSec=300
 TimeoutStopSec=120
 Restart=on-failure
@@ -370,19 +321,12 @@ Group=root
 WantedBy=multi-user.target
 EOF
 
-# Update the install path in the unit file to match your checkout location
-INSTALL_DIR="$(pwd)"
-sudo sed -i "s|/opt/cliproxyapi|${INSTALL_DIR}|g" \
-  /etc/systemd/system/cliproxyapi-stack.service
-
 # Reload systemd and enable service
 sudo systemctl daemon-reload
 sudo systemctl enable cliproxyapi-stack
 ```
 
-This matches the installer's production contract: the stack is started from the repository root, reads variables from `infrastructure/.env`, and automatically picks up any root-level `docker-compose.override.yml` written by the installer.
-
-If you use an external/custom PostgreSQL server, keep `postgres` in `ExecStart`; it remains an inert placeholder container and should not hold production data. If you use an external reverse proxy, remove `caddy`. If you enable the Perplexity sidecar profile, add `perplexity-sidecar` to the explicit `ExecStart` service list because profiled services are not auto-started when Compose is invoked with explicit service names.
+In domain mode, the installer adds the bundled Caddy profile. In local-IP and Cloudflare modes, the dashboard and API are exposed directly on `8318` and `8317` without Caddy.
 
 ### 7. Start the Stack
 
@@ -390,40 +334,14 @@ If you use an external/custom PostgreSQL server, keep `postgres` in `ExecStart`;
 sudo systemctl start cliproxyapi-stack
 ```
 
-Or manually from the repository root, using the service list that matches your reverse-proxy mode:
-
-**Integrated Caddy**
-```bash
-docker compose --env-file infrastructure/.env -f docker-compose.yml up -d --wait postgres caddy docker-proxy cliproxyapi dashboard
-```
-
-**External reverse proxy**
-```bash
-docker compose --env-file infrastructure/.env -f docker-compose.yml up -d --wait postgres docker-proxy cliproxyapi dashboard
-```
-
-In external/custom PostgreSQL mode, keep `postgres` in those commands as well. The bundled container remains present only as an inert placeholder because the current production runtime still starts it alongside `dashboard`.
-
-Add `perplexity-sidecar` to the explicit service list when you intentionally enable that profile. This keeps the manual command aligned with the installer's mode-aware systemd unit generation.
-
-For ongoing maintenance from the repository root, prefer the `rebuild.sh` flows above instead of ad-hoc compose update commands:
+Or manually from the runtime bundle root:
 
 ```bash
-./rebuild.sh                  # In-place refresh, avoids full stack tear-down
-./rebuild.sh --dashboard-only # Rebuild dashboard only, leaves cliproxyapi untouched
-./rebuild.sh --full-recreate  # Full stop/remove/start cycle for the entire stack
+cd /opt/cliproxyapi
+docker compose --env-file .env -f docker-compose.yml up -d --wait
+docker compose --env-file .env -f docker-compose.yml ps
+docker compose --env-file .env -f docker-compose.yml logs -f
+docker compose --env-file .env -f docker-compose.yml down
 ```
 
-Use `--full-recreate` only when you are prepared for a complete service interruption.
-
-If you intentionally need low-level/manual Compose operations, use them for troubleshooting or specialized cases rather than as the normal update path. In particular, `rebuild.sh` is the documented update workflow because it keeps the pull scope aligned with the repository's local-build behavior.
-
-When you do use direct production Compose commands from the repository root, include the production env-file contract explicitly unless you have already exported the same variables in your shell:
-
-```bash
-docker compose --env-file infrastructure/.env -f docker-compose.yml ps
-docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f
-docker compose --env-file infrastructure/.env -f docker-compose.yml down
-```
-
-If you instead operate from `infrastructure/`, the legacy wrapper there forwards to the repository-root production Compose file while keeping `infrastructure/.env` as the active env file.
+In external/custom PostgreSQL mode, the bundled `postgres` container remains an inert placeholder and should not hold production data.

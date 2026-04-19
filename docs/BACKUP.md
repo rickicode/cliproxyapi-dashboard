@@ -5,7 +5,7 @@
 ## Create Backup
 
 ```bash
-./scripts/backup.sh
+/opt/cliproxyapi/scripts/backup.sh
 ```
 
 ### What's Included
@@ -13,17 +13,16 @@
 - PostgreSQL database dump
 - CLIProxyAPIPlus configuration
 - OAuth token storage
-- Environment files
-- TLS certificates
+- Current runtime config.yaml
 
 ### Storage Location
 
-Backups are stored in `backups/cliproxyapi_backup_YYYYMMDD_HHMMSS.tar.gz`
+Backups are stored in `/opt/cliproxyapi/backups/cliproxyapi_backup_YYYYMMDD_HHMMSS.tar.gz`
 
 ## Restore from Backup
 
 ```bash
-./scripts/restore.sh backups/cliproxyapi_backup_20260206_020000.tar.gz
+/opt/cliproxyapi/scripts/restore.sh /opt/cliproxyapi/backups/cliproxyapi_backup_20260206_020000.tar.gz
 ```
 
 The restore script will:
@@ -44,11 +43,13 @@ Configured during installation via cron:
 **View cron schedule:**
 
 ```bash
-sudo crontab -l
+crontab -l
 ```
 
 **View backup logs:**
 
 ```bash
-tail -f backups/backup.log
+tail -f /opt/cliproxyapi/backups/backup.log
 ```
+
+> These helper scripts only support installs using the bundled Docker-managed PostgreSQL service (`DB_MODE=docker`). If you use external/custom PostgreSQL, use your database platform's native backup and restore tooling.

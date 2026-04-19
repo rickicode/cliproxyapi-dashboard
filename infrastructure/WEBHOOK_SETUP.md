@@ -1,5 +1,7 @@
 # Dashboard Deployment Webhook Setup
 
+> **Legacy note**: this document describes the older webhook/git-checkout-based deploy flow. It is not part of the default runtime-bundle installer path introduced for `/opt/cliproxyapi` deployments.
+
 This guide explains how to set up the webhook server for deploying the dashboard from the UI.
 
 ## Prerequisites

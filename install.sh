@@ -46,6 +46,175 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+detect_local_ip() {
+    local detected_ip=""
+
+    if command -v ip &> /dev/null; then
+        detected_ip=$(ip route get 1.1.1.1 2>/dev/null | python3 -c 'import sys,re; data=sys.stdin.read(); m=re.search(r"\bsrc\s+(\S+)", data); print(m.group(1) if m else "")')
+    fi
+
+    if [ -z "$detected_ip" ] && command -v hostname &> /dev/null; then
+        detected_ip=$(hostname -I 2>/dev/null | python3 -c 'import sys; data=sys.stdin.read().split(); print(data[0] if data else "")')
+    fi
+
+    if [ -z "$detected_ip" ]; then
+        detected_ip="127.0.0.1"
+    fi
+
+    printf '%s\n' "$detected_ip"
+}
+
+resolve_github_fetch_ref() {
+    if [ -n "${CLIPROXYAPI_INSTALLER_REF:-}" ]; then
+        printf '%s\n' "$CLIPROXYAPI_INSTALLER_REF"
+        return 0
+    fi
+
+    if command -v git &> /dev/null && git -C "$INSTALLER_SOURCE_DIR" rev-parse HEAD >/dev/null 2>&1; then
+        git -C "$INSTALLER_SOURCE_DIR" rev-parse HEAD
+        return 0
+    fi
+
+    log_error "Unable to determine installer Git ref for runtime bundle fetches"
+    log_error "Run the installer from a git checkout or set CLIPROXYAPI_INSTALLER_REF to a tag/commit SHA"
+    exit 1
+}
+
+ensure_runtime_directories() {
+    mkdir -p "$RUNTIME_ROOT" "$RUNTIME_CONFIG_DIR" "$RUNTIME_INFRA_DIR/config" "$RUNTIME_METADATA_DIR" "$RUNTIME_SCRIPTS_DIR" "$RUNTIME_BACKUPS_DIR"
+}
+
+fetch_github_raw_file() {
+    local relative_path=$1
+    local destination_path=$2
+    local url="${GITHUB_RAW_BASE_URL}/${relative_path}"
+
+    mkdir -p "$(dirname "$destination_path")"
+
+    if ! curl -fsSL "$url" -o "$destination_path"; then
+        log_error "Failed to fetch required runtime file: $relative_path"
+        log_error "URL: $url"
+        exit 1
+    fi
+
+    if [ ! -s "$destination_path" ]; then
+        log_error "Fetched runtime file is empty: $relative_path"
+        exit 1
+    fi
+}
+
+fetch_runtime_bundle() {
+    log_info "Fetching runtime bundle into $RUNTIME_ROOT"
+
+    fetch_github_raw_file "docker-compose.yml" "$RUNTIME_COMPOSE_FILE"
+    fetch_github_raw_file "infrastructure/config/config.yaml" "$RUNTIME_CONFIG_FILE"
+    fetch_github_raw_file "scripts/backup.sh" "$RUNTIME_SCRIPTS_DIR/backup.sh"
+    fetch_github_raw_file "scripts/restore.sh" "$RUNTIME_SCRIPTS_DIR/restore.sh"
+    fetch_github_raw_file "scripts/rotate-backups.sh" "$RUNTIME_SCRIPTS_DIR/rotate-backups.sh"
+
+    if [ "$ACCESS_MODE" = "domain" ]; then
+        fetch_github_raw_file "infrastructure/config/Caddyfile" "$RUNTIME_CADDY_FILE"
+    fi
+
+    chmod +x "$RUNTIME_SCRIPTS_DIR/backup.sh" "$RUNTIME_SCRIPTS_DIR/restore.sh" "$RUNTIME_SCRIPTS_DIR/rotate-backups.sh"
+}
+
+validate_runtime_compose_template() {
+    if ! env \
+        MANAGEMENT_API_KEY=dummy \
+        COLLECTOR_API_KEY=dummy \
+        JWT_SECRET=dummy \
+        DATABASE_URL=postgresql://user:pass@localhost:5432/db \
+        PROVIDER_ENCRYPTION_KEY=dummy \
+        docker compose -f "$RUNTIME_COMPOSE_FILE" config >/dev/null 2>&1; then
+        log_error "Fetched runtime compose file is not parseable"
+        exit 1
+    fi
+}
+
+validate_runtime_compose_with_env() {
+    if ! docker compose --env-file "$ENV_FILE" -f "$RUNTIME_COMPOSE_FILE" config >/dev/null 2>&1; then
+        log_error "Runtime compose file failed validation with generated environment"
+        exit 1
+    fi
+}
+
+write_install_metadata() {
+    cat > "$INSTALL_INFO_FILE" <<EOF
+INSTALLER_SOURCE_DIR=$INSTALLER_SOURCE_DIR
+RUNTIME_ROOT=$RUNTIME_ROOT
+ACCESS_MODE=$ACCESS_MODE
+LOCAL_IP=$LOCAL_IP
+DOMAIN=${DOMAIN:-}
+DASHBOARD_SUBDOMAIN=${DASHBOARD_SUBDOMAIN:-}
+API_SUBDOMAIN=${API_SUBDOMAIN:-}
+DASHBOARD_URL=$DASHBOARD_URL
+API_URL=$API_URL
+DB_MODE=$DB_MODE
+PERPLEXITY_ENABLED=$PERPLEXITY_ENABLED
+OAUTH_ENABLED=$OAUTH_ENABLED
+GITHUB_RAW_BASE_URL=$GITHUB_RAW_BASE_URL
+GITHUB_FETCH_REF=$GITHUB_REF
+INSTALL_TIMESTAMP=$(date -Iseconds)
+EOF
+    chmod 600 "$INSTALL_INFO_FILE"
+}
+
+install_cloudflared_package() {
+    if command -v cloudflared &> /dev/null; then
+        log_success "cloudflared already installed"
+        return 0
+    fi
+
+    log_info "Installing cloudflared from Cloudflare apt repository..."
+    mkdir -p /usr/share/keyrings
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+    cat > /etc/apt/sources.list.d/cloudflared.list <<'EOF'
+deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main
+EOF
+    apt-get update
+    apt-get install -y cloudflared
+
+    if ! command -v cloudflared &> /dev/null; then
+        log_error "cloudflared installation failed"
+        exit 1
+    fi
+}
+
+install_cloudflared_service() {
+    if [ "$ACCESS_MODE" != "cloudflare" ]; then
+        return 0
+    fi
+
+    log_info "=== Cloudflare Tunnel Service Setup ==="
+    echo ""
+
+    install_cloudflared_package
+
+    if systemctl list-unit-files cloudflared.service >/dev/null 2>&1; then
+        log_warning "cloudflared service already exists"
+        read -p "Reinstall cloudflared service with the new token? [y/N]: " REINSTALL_CLOUDFLARED
+        if [[ "$REINSTALL_CLOUDFLARED" =~ ^[Yy]$ ]]; then
+            cloudflared service uninstall || true
+        else
+            log_info "Keeping existing cloudflared service"
+            return 0
+        fi
+    fi
+
+    cloudflared service install "$CLOUDFLARE_TUNNEL_TOKEN"
+    systemctl daemon-reload
+    systemctl enable cloudflared.service
+    systemctl restart cloudflared.service
+
+    if ! systemctl is-active --quiet cloudflared.service; then
+        log_error "cloudflared.service failed to start"
+        exit 1
+    fi
+
+    log_success "cloudflared service installed and running"
+}
+
 log_override_manual_merge_warning() {
     local override_file=$1
     local reason=$2
@@ -413,9 +582,25 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Detect installation directory (where script is located)
-INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-log_info "Installation directory: $INSTALL_DIR"
+# Detect installer source directory (where script is located)
+INSTALLER_SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUNTIME_ROOT="/opt/cliproxyapi"
+RUNTIME_CONFIG_DIR="$RUNTIME_ROOT/config"
+RUNTIME_INFRA_DIR="$RUNTIME_ROOT/infrastructure"
+RUNTIME_METADATA_DIR="$RUNTIME_ROOT/metadata"
+RUNTIME_SCRIPTS_DIR="$RUNTIME_ROOT/scripts"
+RUNTIME_BACKUPS_DIR="$RUNTIME_ROOT/backups"
+RUNTIME_COMPOSE_FILE="$RUNTIME_ROOT/docker-compose.yml"
+RUNTIME_CONFIG_FILE="$RUNTIME_CONFIG_DIR/config.yaml"
+RUNTIME_CADDY_FILE="$RUNTIME_CONFIG_DIR/Caddyfile"
+ENV_FILE="$RUNTIME_ROOT/.env"
+INSTALL_INFO_FILE="$RUNTIME_METADATA_DIR/install-info.env"
+GITHUB_REPOSITORY="rickicode/cliproxyapi-dashboard"
+GITHUB_REF="$(resolve_github_fetch_ref)"
+GITHUB_RAW_BASE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF}"
+
+log_info "Installer source directory: $INSTALLER_SOURCE_DIR"
+log_info "Runtime root: $RUNTIME_ROOT"
 
 # Check if running on Ubuntu/Debian
 if ! command -v apt-get &> /dev/null; then
@@ -456,37 +641,68 @@ echo ""
 log_info "=== Configuration ==="
 echo ""
 
-# Domain configuration
+LOCAL_IP=$(detect_local_ip)
+
+echo "  1) Domain + integrated Caddy"
+echo "  2) No domain + Cloudflare Tunnel"
+echo "  3) No domain + local IP only"
 while true; do
-    read -p "Enter your domain (e.g., example.com): " DOMAIN
-    if [ -z "$DOMAIN" ]; then
-        log_error "Domain cannot be empty"
-        continue
-    fi
-    # Basic validation
-    if [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        log_error "Invalid domain format"
-        continue
-    fi
-    break
+    read -p "Select access mode [1-3]: " ACCESS_MODE_CHOICE
+    case $ACCESS_MODE_CHOICE in
+        1)
+            ACCESS_MODE="domain"
+            break
+            ;;
+        2)
+            ACCESS_MODE="cloudflare"
+            break
+            ;;
+        3)
+            ACCESS_MODE="local"
+            break
+            ;;
+        *)
+            log_error "Invalid choice"
+            ;;
+    esac
 done
 
-# Dashboard subdomain
-read -p "Enter dashboard subdomain [default: dashboard]: " DASHBOARD_SUBDOMAIN
-DASHBOARD_SUBDOMAIN="${DASHBOARD_SUBDOMAIN:-dashboard}"
+DOMAIN=""
+DASHBOARD_SUBDOMAIN=""
+API_SUBDOMAIN=""
+CLOUDFLARE_TUNNEL_TOKEN=""
 
-# API subdomain
-read -p "Enter API subdomain [default: api]: " API_SUBDOMAIN
-API_SUBDOMAIN="${API_SUBDOMAIN:-api}"
+if [ "$ACCESS_MODE" = "domain" ]; then
+    while true; do
+        read -p "Enter your domain (e.g., example.com): " DOMAIN
+        if [ -z "$DOMAIN" ]; then
+            log_error "Domain cannot be empty"
+            continue
+        fi
+        if [[ ! "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+            log_error "Invalid domain format"
+            continue
+        fi
+        break
+    done
 
-# External reverse proxy support
-echo ""
-read -p "Use existing reverse proxy/Caddy? [y/N]: " EXTERNAL_PROXY_INPUT
-if [[ "$EXTERNAL_PROXY_INPUT" =~ ^[Yy]$ ]]; then
-    EXTERNAL_PROXY=1
-else
-    EXTERNAL_PROXY=0
+    read -p "Enter dashboard subdomain [default: dashboard]: " DASHBOARD_SUBDOMAIN
+    DASHBOARD_SUBDOMAIN="${DASHBOARD_SUBDOMAIN:-dashboard}"
+
+    read -p "Enter API subdomain [default: api]: " API_SUBDOMAIN
+    API_SUBDOMAIN="${API_SUBDOMAIN:-api}"
+elif [ "$ACCESS_MODE" = "cloudflare" ]; then
+    while true; do
+        read -r -p "Enter Cloudflare Tunnel token: " CLOUDFLARE_TUNNEL_TOKEN
+        if [ -z "$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+            log_error "Cloudflare Tunnel token cannot be empty"
+            continue
+        fi
+        break
+    done
 fi
+
+EXTERNAL_PROXY=0
 
 # OAuth provider support
 echo ""
@@ -594,7 +810,6 @@ if [ "$DB_MODE" = "external" ] && [ "$BACKUP_INTERVAL" != "none" ]; then
     BACKUP_RETENTION=0
 fi
 
-ENV_FILE="$INSTALL_DIR/infrastructure/.env"
 SKIP_ENV=0
 
 if [ -f "$ENV_FILE" ]; then
@@ -627,12 +842,33 @@ if [ -f "$ENV_FILE" ]; then
     fi
 fi
 
+if [ "$ACCESS_MODE" = "domain" ]; then
+    DASHBOARD_URL="https://${DASHBOARD_SUBDOMAIN}.${DOMAIN}"
+    API_URL="https://${API_SUBDOMAIN}.${DOMAIN}"
+    CLIPROXYAPI_BIND_ADDRESS="127.0.0.1"
+    DASHBOARD_BIND_ADDRESS="127.0.0.1"
+    COMPOSE_PROFILES_VALUE="caddy"
+else
+    DASHBOARD_URL="http://${LOCAL_IP}:8318"
+    API_URL="http://${LOCAL_IP}:8317"
+    CLIPROXYAPI_BIND_ADDRESS="0.0.0.0"
+    DASHBOARD_BIND_ADDRESS="0.0.0.0"
+    COMPOSE_PROFILES_VALUE=""
+fi
+
 echo ""
 log_info "Configuration summary:"
-log_info "  Domain: $DOMAIN"
-log_info "  Dashboard: ${DASHBOARD_SUBDOMAIN}.${DOMAIN}"
-log_info "  API: ${API_SUBDOMAIN}.${DOMAIN}"
-log_info "  External reverse proxy: $([ $EXTERNAL_PROXY -eq 1 ] && echo 'enabled' || echo 'disabled')"
+log_info "  Access mode: $ACCESS_MODE"
+log_info "  Local IP: $LOCAL_IP"
+if [ "$ACCESS_MODE" = "domain" ]; then
+    log_info "  Domain: $DOMAIN"
+    log_info "  Dashboard: ${DASHBOARD_SUBDOMAIN}.${DOMAIN}"
+    log_info "  API: ${API_SUBDOMAIN}.${DOMAIN}"
+elif [ "$ACCESS_MODE" = "cloudflare" ]; then
+    log_info "  Cloudflare Tunnel: enabled"
+else
+    log_info "  Cloudflare Tunnel: disabled"
+fi
 log_info "  OAuth callbacks: $([ $OAUTH_ENABLED -eq 1 ] && echo 'enabled' || echo 'disabled')"
 log_info "  Perplexity Sidecar: $([ $PERPLEXITY_ENABLED -eq 1 ] && echo 'enabled' || echo 'disabled')"
 log_info "  Database mode: $DB_MODE_LABEL"
@@ -654,11 +890,12 @@ echo ""
 log_info "=== Preflight Conflict Detection ==="
 echo ""
 
-# Define required ports (80/443 excluded if using external proxy)
+# Define required ports per access mode
 REQUIRED_PORTS=()
-if [ $EXTERNAL_PROXY -eq 0 ]; then
+if [ "$ACCESS_MODE" = "domain" ]; then
     REQUIRED_PORTS+=(80 443)
 else
+    REQUIRED_PORTS+=(8317)
     REQUIRED_PORTS+=(8318)
 fi
 if [ $OAUTH_ENABLED -eq 1 ]; then
@@ -666,13 +903,10 @@ if [ $OAUTH_ENABLED -eq 1 ]; then
 fi
 
 # Check for port conflicts
-if [ $EXTERNAL_PROXY -eq 1 ]; then
-    log_info "External proxy mode: skipping ports 80/443 check"
-    if [ $OAUTH_ENABLED -eq 1 ]; then
-        log_info "Checking for OAuth callback port conflicts..."
-    fi
+if [ "$ACCESS_MODE" = "domain" ]; then
+    log_info "Domain mode: checking ports 80/443 and any enabled OAuth callback ports..."
 else
-    log_info "Checking for port conflicts..."
+    log_info "No-domain mode: checking ports 8317/8318 and any enabled OAuth callback ports..."
 fi
 PORT_CONFLICTS=()
 for port in "${REQUIRED_PORTS[@]}"; do
@@ -801,6 +1035,14 @@ COMPOSE_VERSION=$(docker compose version)
 log_info "Verified Docker: $DOCKER_VERSION"
 log_info "Verified Docker Compose: $COMPOSE_VERSION"
 
+ensure_runtime_directories
+fetch_runtime_bundle
+validate_runtime_compose_template
+
+if [ "$ACCESS_MODE" = "cloudflare" ]; then
+    install_cloudflared_package
+fi
+
 echo ""
 
 # ============================================================================
@@ -826,13 +1068,15 @@ if [[ "$UFW_STATUS" == *"inactive"* ]]; then
     ufw limit 22/tcp comment 'SSH with rate limiting'
     
     # HTTP/HTTPS (skip if using external reverse proxy)
-    if [ $EXTERNAL_PROXY -eq 0 ]; then
+    if [ "$ACCESS_MODE" = "domain" ]; then
         log_info "Allowing HTTP/HTTPS (ports 80, 443)..."
         ufw allow 80/tcp comment 'HTTP'
         ufw allow 443/tcp comment 'HTTPS'
         ufw allow 443/udp comment 'HTTP/3 (QUIC)'
     else
-        log_info "Skipping HTTP/HTTPS rules (external proxy mode)"
+        log_info "Allowing direct dashboard/API access (ports 8318, 8317)..."
+        ufw allow 8318/tcp comment 'CLIProxyAPI Dashboard'
+        ufw allow 8317/tcp comment 'CLIProxyAPI API'
     fi
     
     # OAuth callback ports (conditional)
@@ -870,10 +1114,13 @@ else
     }
     
     add_rule_if_missing 22 tcp "SSH with rate limiting"
-    if [ $EXTERNAL_PROXY -eq 0 ]; then
+    if [ "$ACCESS_MODE" = "domain" ]; then
         add_rule_if_missing 80 tcp "HTTP"
         add_rule_if_missing 443 tcp "HTTPS"
         add_rule_if_missing 443 udp "HTTP/3 (QUIC)"
+    else
+        add_rule_if_missing 8318 tcp "CLIProxyAPI Dashboard"
+        add_rule_if_missing 8317 tcp "CLIProxyAPI API"
     fi
     
     # OAuth callback ports (conditional)
@@ -916,7 +1163,7 @@ fi
 
 # Registry-backed production compose defaults to published images in the normal
 # install path. Keep the installer contract minimal by exposing only tag
-# overrides through infrastructure/.env.
+# overrides through the runtime bundle .env.
 DASHBOARD_IMAGE_TAG="latest"
 PERPLEXITY_SIDECAR_IMAGE_TAG="latest"
 
@@ -942,7 +1189,9 @@ if [ $SKIP_ENV -eq 0 ]; then
 # CLIProxyAPI Stack Environment Configuration
 # Generated by install.sh on $(date)
 
-# Domain configuration
+# Access configuration
+ACCESS_MODE=$ACCESS_MODE
+LOCAL_IP=$LOCAL_IP
 DOMAIN=$DOMAIN
 DASHBOARD_SUBDOMAIN=$DASHBOARD_SUBDOMAIN
 API_SUBDOMAIN=$API_SUBDOMAIN
@@ -983,8 +1232,13 @@ CLIPROXYAPI_MANAGEMENT_URL=http://cliproxyapi:8317/v0/management
 DASHBOARD_IMAGE_TAG=$DASHBOARD_IMAGE_TAG
 PERPLEXITY_SIDECAR_IMAGE_TAG=$PERPLEXITY_SIDECAR_IMAGE_TAG
 
+# Access-mode compose settings
+CLIPROXYAPI_BIND_ADDRESS=$CLIPROXYAPI_BIND_ADDRESS
+DASHBOARD_BIND_ADDRESS=$DASHBOARD_BIND_ADDRESS
+COMPOSE_PROFILES=$COMPOSE_PROFILES_VALUE
+
 # Installation directory (host path for volume mounts)
-INSTALL_DIR=$INSTALL_DIR
+INSTALL_DIR=$RUNTIME_ROOT
 
 # Timezone
 TZ=UTC
@@ -993,22 +1247,38 @@ TZ=UTC
 LOG_LEVEL=info
 
 # Full URLs (for reference)
-DASHBOARD_URL=https://${DASHBOARD_SUBDOMAIN}.${DOMAIN}
-API_URL=https://${API_SUBDOMAIN}.${DOMAIN}
+DASHBOARD_URL=$DASHBOARD_URL
+API_URL=$API_URL
 EOF
+
+    if [ "$ACCESS_MODE" = "cloudflare" ]; then
+        write_env_assignment "$ENV_FILE" "CLOUDFLARE_TUNNEL_TOKEN" "$CLOUDFLARE_TUNNEL_TOKEN"
+    fi
 
     # Perplexity Sidecar (conditional)
     if [ $PERPLEXITY_ENABLED -eq 1 ]; then
+        PERPLEXITY_COMPOSE_PROFILES="$COMPOSE_PROFILES_VALUE"
+        if [ -n "$PERPLEXITY_COMPOSE_PROFILES" ]; then
+            PERPLEXITY_COMPOSE_PROFILES="$PERPLEXITY_COMPOSE_PROFILES,perplexity"
+        else
+            PERPLEXITY_COMPOSE_PROFILES="perplexity"
+        fi
+
         cat >> "$ENV_FILE" << EOF
 
 # Perplexity Pro Sidecar
-COMPOSE_PROFILES=perplexity
+COMPOSE_PROFILES=$PERPLEXITY_COMPOSE_PROFILES
 PERPLEXITY_SIDECAR_SECRET=$PERPLEXITY_SIDECAR_SECRET
 EOF
     fi
     
     chmod 600 "$ENV_FILE"
+    write_install_metadata
+    validate_runtime_compose_with_env
     log_success ".env file created"
+elif [ -f "$ENV_FILE" ]; then
+    write_install_metadata
+    validate_runtime_compose_with_env
 fi
 
 echo ""
@@ -1047,18 +1317,18 @@ if [ $SKIP_SERVICE -eq 0 ]; then
     # mode the bundled postgres container remains an inert dependency placeholder
     # because dashboard still depends on the postgres service at runtime.
     COMPOSE_SERVICES="postgres docker-proxy cliproxyapi dashboard"
-    if [ $EXTERNAL_PROXY -eq 0 ]; then
+    if [ "$ACCESS_MODE" = "domain" ]; then
         COMPOSE_SERVICES="caddy $COMPOSE_SERVICES"
     fi
     if [ $PERPLEXITY_ENABLED -eq 1 ]; then
         COMPOSE_SERVICES="$COMPOSE_SERVICES perplexity-sidecar"
     fi
 
-    COMPOSE_START_CMD="/usr/bin/docker compose --env-file $INSTALL_DIR/infrastructure/.env -f $INSTALL_DIR/docker-compose.yml up -d --wait $COMPOSE_SERVICES"
-    if [ $EXTERNAL_PROXY -eq 1 ]; then
-        COMPOSE_DESC="(without Caddy - using external reverse proxy, database mode: $DB_MODE; bundled postgres remains present/inert in external mode)"
+    COMPOSE_START_CMD="/usr/bin/docker compose --env-file $RUNTIME_ROOT/.env -f $RUNTIME_ROOT/docker-compose.yml up -d --wait $COMPOSE_SERVICES"
+    if [ "$ACCESS_MODE" = "domain" ]; then
+        COMPOSE_DESC="(with integrated Caddy, access mode: $ACCESS_MODE, database mode: $DB_MODE; bundled postgres remains present/inert in external mode)"
     else
-        COMPOSE_DESC="(with integrated Caddy, database mode: $DB_MODE; bundled postgres remains present/inert in external mode)"
+        COMPOSE_DESC="(without Caddy, access mode: $ACCESS_MODE, database mode: $DB_MODE; bundled postgres remains present/inert in external mode)"
     fi
     log_info "Systemd compose command: $COMPOSE_START_CMD $COMPOSE_DESC"
 
@@ -1072,9 +1342,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=true
-WorkingDirectory=$INSTALL_DIR
+WorkingDirectory=$RUNTIME_ROOT
 ExecStart=$COMPOSE_START_CMD
-ExecStop=/usr/bin/docker compose --env-file $INSTALL_DIR/infrastructure/.env -f $INSTALL_DIR/docker-compose.yml down
+ExecStop=/usr/bin/docker compose --env-file $RUNTIME_ROOT/.env -f $RUNTIME_ROOT/docker-compose.yml down
 TimeoutStartSec=300
 TimeoutStopSec=120
 
@@ -1099,6 +1369,9 @@ EOF
 fi
 
 echo ""
+install_cloudflared_service
+
+echo ""
 
 # ============================================================================
 # SCRIPTS INSTALLATION
@@ -1107,11 +1380,11 @@ echo ""
 log_info "=== Backup/Restore Scripts Setup ==="
 echo ""
 
-SCRIPTS_DIR="$INSTALL_DIR/scripts"
+SCRIPTS_DIR="$RUNTIME_SCRIPTS_DIR"
 
 if [ ! -d "$SCRIPTS_DIR" ] || [ ! -f "$SCRIPTS_DIR/backup.sh" ]; then
     log_error "Scripts directory not found at $SCRIPTS_DIR"
-    log_error "Ensure the repository was cloned correctly (scripts/ should exist)"
+    log_error "Runtime bundle scripts were not fetched correctly"
     exit 1
 fi
 
@@ -1152,7 +1425,7 @@ if [ "$BACKUP_INTERVAL" != "none" ]; then
         log_info "Installing backup cron job ($BACKUP_INTERVAL)..."
         
         # Add cron job
-        (crontab -l 2>/dev/null || true; echo "# $CRON_COMMENT"; echo "$CRON_SCHEDULE $SCRIPTS_DIR/backup.sh >> $INSTALL_DIR/backups/backup.log 2>&1 && $SCRIPTS_DIR/rotate-backups.sh $BACKUP_RETENTION >> $INSTALL_DIR/backups/backup.log 2>&1") | crontab -
+        (crontab -l 2>/dev/null || true; echo "# $CRON_COMMENT"; echo "$CRON_SCHEDULE $SCRIPTS_DIR/backup.sh >> $RUNTIME_BACKUPS_DIR/backup.log 2>&1 && $SCRIPTS_DIR/rotate-backups.sh $BACKUP_RETENTION >> $RUNTIME_BACKUPS_DIR/backup.log 2>&1") | crontab -
         
         log_success "Backup cron job installed (runs $BACKUP_INTERVAL at 2 AM)"
     fi
@@ -1255,40 +1528,12 @@ echo ""
 
 ROOT_OVERRIDE_CREATED_BY_INSTALLER=0
 
-if [ $EXTERNAL_PROXY -eq 1 ]; then
+if [ "$ACCESS_MODE" = "domain" ]; then
     echo ""
-    log_info "=== External Proxy Mode Setup ==="
+    log_info "=== Integrated Caddy Setup ==="
     echo ""
-    
-    # Create docker-compose.override.yml beside the root production compose file so
-    # direct/root invocations automatically load it.
-    OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
-
-    EXTERNAL_PROXY_OVERRIDE_SNIPPET=$(cat <<'EOF'
-ports:
-  - "127.0.0.1:8318:8318"
-EOF
-)
-
-    if [ -f "$OVERRIDE_FILE" ]; then
-        log_override_manual_merge_warning "$OVERRIDE_FILE" "External proxy mode needs the dashboard port binding in the existing root override so your host reverse proxy can reach the dashboard on 127.0.0.1:8318." "$EXTERNAL_PROXY_OVERRIDE_SNIPPET"
-        log_info "Keeping the existing override file unchanged."
-    else
-        log_info "Creating docker-compose.override.yml to expose dashboard on 127.0.0.1:8318..."
-
-        cat > "$OVERRIDE_FILE" << 'COMPOSE_OVERRIDE'
-services:
-  dashboard:
-    ports:
-      - "127.0.0.1:8318:8318"
-COMPOSE_OVERRIDE
-        
-        chmod 644 "$OVERRIDE_FILE"
-        ROOT_OVERRIDE_CREATED_BY_INSTALLER=1
-        log_success "Override file created at $OVERRIDE_FILE"
-    fi
-
-    log_info "Dashboard will be accessible at http://127.0.0.1:8318 for your reverse proxy"
+    log_info "Runtime Caddy template fetched to $RUNTIME_CADDY_FILE"
+    log_info "Bundled Caddy remains the only supported domain-mode reverse proxy in this installer flow."
     echo ""
 fi
 
@@ -1296,278 +1541,7 @@ fi
 # CADDY INTEGRATION (if external proxy mode)
 # ============================================================================
 
-if [ $EXTERNAL_PROXY -eq 1 ]; then
-    echo ""
-    log_info "=== Reverse Proxy Integration Setup ==="
-    echo ""
-    
-    # Generate Caddy configuration snippet for host Caddy (localhost upstream)
-    CADDY_SNIPPET_HOST=$(cat << 'CADDY_CONFIG'
-# BEGIN CLIPROXYAPI-AUTO (Host Caddy - localhost upstream)
-${DASHBOARD_SUBDOMAIN}.${DOMAIN} {
-    reverse_proxy localhost:8318
-}
 
-${API_SUBDOMAIN}.${DOMAIN} {
-    reverse_proxy localhost:8317
-}
-# END CLIPROXYAPI-AUTO
-CADDY_CONFIG
-)
-    
-    # Generate Caddy configuration snippet for Dockerized Caddy (service name upstream)
-    CADDY_SNIPPET_DOCKER=$(cat << 'CADDY_DOCKER_CONFIG'
-# BEGIN CLIPROXYAPI-AUTO (Docker Caddy - container upstream)
-${DASHBOARD_SUBDOMAIN}.${DOMAIN} {
-    reverse_proxy cliproxyapi-dashboard:8318
-}
-
-${API_SUBDOMAIN}.${DOMAIN} {
-    reverse_proxy cliproxyapi:8317
-}
-# END CLIPROXYAPI-AUTO
-CADDY_DOCKER_CONFIG
-)
-    
-    # Replace template variables in both snippets
-    CADDY_SNIPPET_HOST="${CADDY_SNIPPET_HOST//\$\{DASHBOARD_SUBDOMAIN\}/$DASHBOARD_SUBDOMAIN}"
-    CADDY_SNIPPET_HOST="${CADDY_SNIPPET_HOST//\$\{API_SUBDOMAIN\}/$API_SUBDOMAIN}"
-    CADDY_SNIPPET_HOST="${CADDY_SNIPPET_HOST//\$\{DOMAIN\}/$DOMAIN}"
-    
-    CADDY_SNIPPET_DOCKER="${CADDY_SNIPPET_DOCKER//\$\{DASHBOARD_SUBDOMAIN\}/$DASHBOARD_SUBDOMAIN}"
-    CADDY_SNIPPET_DOCKER="${CADDY_SNIPPET_DOCKER//\$\{API_SUBDOMAIN\}/$API_SUBDOMAIN}"
-    CADDY_SNIPPET_DOCKER="${CADDY_SNIPPET_DOCKER//\$\{DOMAIN\}/$DOMAIN}"
-    
-    log_info "Generated Caddy configurations for both host and Docker Caddy:"
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "OPTION 1: Host Caddy (Caddy running on your system)"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "$CADDY_SNIPPET_HOST"
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "OPTION 2: Docker Caddy (Caddy running in a container)"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "$CADDY_SNIPPET_DOCKER"
-    echo ""
-    echo "If using Docker Caddy, also connect it to the CLIProxyAPI frontend network:"
-    echo "  ${YELLOW}docker network connect cliproxyapi_frontend <your-caddy-container-name>${NC}"
-    echo ""
-    
-    read -p "Apply configuration to Caddy? [y/N]: " APPLY_CADDY
-    if [[ "$APPLY_CADDY" =~ ^[Yy]$ ]]; then
-        echo ""
-        read -p "Is your Caddy running on the host system or in Docker? [host/docker]: " CADDY_MODE
-        
-        if [[ "$CADDY_MODE" =~ ^[Dd]ocker$ ]]; then
-            SELECTED_SNIPPET="$CADDY_SNIPPET_DOCKER"
-            log_info "Using Docker Caddy configuration (will use container names)"
-        else
-            SELECTED_SNIPPET="$CADDY_SNIPPET_HOST"
-            log_info "Using host Caddy configuration (will use localhost)"
-        fi
-        
-        read -p "Enter Caddyfile path [default: /etc/caddy/Caddyfile]: " CADDYFILE_PATH
-        CADDYFILE_PATH="${CADDYFILE_PATH:-/etc/caddy/Caddyfile}"
-        
-        if [ ! -f "$CADDYFILE_PATH" ]; then
-            log_error "Caddyfile not found at $CADDYFILE_PATH"
-            log_warning "Skipping auto-apply. Please manually add the snippet above to your Caddyfile."
-        else
-            BACKUP_FILE="${CADDYFILE_PATH}.bak.$(date +%Y%m%d_%H%M%S)"
-            log_info "Creating backup at $BACKUP_FILE"
-            cp "$CADDYFILE_PATH" "$BACKUP_FILE"
-            
-            if grep -q "BEGIN CLIPROXYAPI-AUTO" "$CADDYFILE_PATH"; then
-                log_warning "CLIProxyAPI configuration already exists in Caddyfile"
-                log_info "Updating existing configuration..."
-                
-                awk '
-                    BEGIN { in_section = 0; section_printed = 0 }
-                    /# BEGIN CLIPROXYAPI-AUTO/ { in_section = 1; if (!section_printed) { print new_config; section_printed = 1 } next }
-                    /# END CLIPROXYAPI-AUTO/ { in_section = 0; next }
-                    !in_section { print }
-                ' new_config="$SELECTED_SNIPPET" "$CADDYFILE_PATH" > "${CADDYFILE_PATH}.tmp"
-            else
-                {
-                    cat "$CADDYFILE_PATH"
-                    echo ""
-                    echo "$SELECTED_SNIPPET"
-                } > "${CADDYFILE_PATH}.tmp"
-            fi
-            
-            if command -v caddy &> /dev/null; then
-                log_info "Validating Caddy configuration..."
-                if caddy validate --config "${CADDYFILE_PATH}.tmp" &> /dev/null; then
-                    log_success "Configuration valid"
-                    mv "${CADDYFILE_PATH}.tmp" "$CADDYFILE_PATH"
-                    
-                    read -p "Reload Caddy now? [y/N]: " RELOAD_CADDY
-                    if [[ "$RELOAD_CADDY" =~ ^[Yy]$ ]]; then
-                        if command -v systemctl &> /dev/null && systemctl is-active --quiet caddy; then
-                            log_info "Reloading Caddy service..."
-                            if systemctl reload caddy; then
-                                log_success "Caddy reloaded successfully"
-                            else
-                                log_error "Failed to reload Caddy"
-                                log_warning "Restoring backup from $BACKUP_FILE"
-                                cp "$BACKUP_FILE" "$CADDYFILE_PATH"
-                            fi
-                        elif command -v docker &> /dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -q caddy; then
-                            log_info "Reloading Caddy container..."
-                            read -p "Enter Caddy container name [default: caddy]: " CADDY_CONTAINER
-                            CADDY_CONTAINER="${CADDY_CONTAINER:-caddy}"
-                            
-                            if docker exec "$CADDY_CONTAINER" caddy reload -c /etc/caddy/Caddyfile; then
-                                log_success "Caddy container reloaded successfully"
-                            else
-                                log_error "Failed to reload Caddy container"
-                                log_warning "Restoring backup from $BACKUP_FILE"
-                                cp "$BACKUP_FILE" "$CADDYFILE_PATH"
-                            fi
-                        else
-                            log_warning "Caddy not running. Please reload manually with: caddy reload -c $CADDYFILE_PATH"
-                        fi
-                    fi
-                    
-                    log_success "Caddy configuration updated"
-                else
-                    log_error "Caddy configuration validation failed"
-                    log_warning "Restoring backup from $BACKUP_FILE"
-                    cp "$BACKUP_FILE" "$CADDYFILE_PATH"
-                    rm -f "${CADDYFILE_PATH}.tmp"
-                fi
-            else
-                log_info "caddy command not found; skipping validation"
-                log_warning "Please validate manually before reloading"
-                mv "${CADDYFILE_PATH}.tmp" "$CADDYFILE_PATH"
-            fi
-        fi
-    else
-        log_info "Skipping auto-apply. Please manually add one of the configurations above to your Caddyfile."
-        if [[ "${CADDY_MODE:-}" =~ ^[Dd]ocker$ ]]; then
-            log_info "Remember to connect Caddy to the frontend network:"
-            echo "  ${YELLOW}docker network connect cliproxyapi_frontend <your-caddy-container-name>${NC}"
-        fi
-    fi
-    
-    echo ""
-fi
-
-# ============================================================================
-# WEBHOOK DEPLOY SERVICE (Optional)
-# ============================================================================
-
-echo ""
-log_info "=== Dashboard Deploy Webhook (Optional) ==="
-echo ""
-log_info "The webhook service enables one-click dashboard updates from the admin panel."
-log_info "It runs a lightweight HTTP server that triggers git pull + image pull + restart."
-echo ""
-
-read -p "Install webhook deploy service? [y/N]: " INSTALL_WEBHOOK
-if [[ "$INSTALL_WEBHOOK" =~ ^[Yy]$ ]]; then
-    log_info "Installing webhook..."
-    
-    # Install webhook binary
-    if command -v webhook &> /dev/null; then
-        log_success "webhook already installed"
-    else
-        apt-get install -y webhook
-        log_success "webhook installed"
-    fi
-    
-    # Generate deploy secret
-    DEPLOY_SECRET=$(openssl rand -hex 32)
-    
-    # Create webhook config directory
-    mkdir -p /etc/webhook
-    
-    # Copy and configure webhook.yaml
-    log_info "Configuring webhook..."
-    sed "s/{{DEPLOY_SECRET}}/$DEPLOY_SECRET/g" "$INSTALL_DIR/infrastructure/webhook.yaml" > /etc/webhook/hooks.yaml
-    chmod 600 /etc/webhook/hooks.yaml
-    
-    # Make deploy script executable
-    chmod +x "$INSTALL_DIR/infrastructure/deploy.sh"
-    
-    # Create systemd service for webhook
-    cat > /etc/systemd/system/webhook-deploy.service << EOF
-[Unit]
-Description=Webhook Deploy Service for CLIProxyAPI Dashboard
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/webhook -hooks /etc/webhook/hooks.yaml -port 9000 -verbose
-Restart=on-failure
-RestartSec=5
-User=root
-Group=root
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    
-    # Enable and start webhook service
-    systemctl daemon-reload
-    systemctl enable webhook-deploy.service
-    systemctl start webhook-deploy.service
-    
-    log_success "Webhook service installed and started on port 9000"
-    
-    # Add webhook env vars to .env file
-    log_info "Adding webhook configuration to .env..."
-    cat >> "$ENV_FILE" << EOF
-
-# Webhook Deploy Service
-WEBHOOK_HOST=http://host.docker.internal:9000
-DEPLOY_SECRET=$DEPLOY_SECRET
-EOF
-    
-    OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
-    WEBHOOK_OVERRIDE_SNIPPET=$(cat <<'EOF'
-extra_hosts:
-  - "host.docker.internal:host-gateway"
-EOF
-)
-
-    if [ -f "$OVERRIDE_FILE" ]; then
-        if root_override_has_dashboard_host_gateway "$OVERRIDE_FILE"; then
-            log_info "dashboard.extra_hosts already includes host.docker.internal:host-gateway in override file"
-        elif [ "$ROOT_OVERRIDE_CREATED_BY_INSTALLER" -eq 1 ]; then
-            cat >> "$OVERRIDE_FILE" << 'OVERRIDE_APPEND'
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-OVERRIDE_APPEND
-            log_success "Added dashboard.extra_hosts to installer-created override file"
-        else
-            log_override_manual_merge_warning "$OVERRIDE_FILE" "Webhook-triggered dashboard updates require dashboard container access to the host webhook service via host.docker.internal. Because the root override already exists, the installer cannot safely merge dashboard.extra_hosts into that file for you." "$WEBHOOK_OVERRIDE_SNIPPET"
-        fi
-    else
-        cat > "$OVERRIDE_FILE" << 'OVERRIDE_NEW'
-services:
-  dashboard:
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-OVERRIDE_NEW
-        ROOT_OVERRIDE_CREATED_BY_INSTALLER=1
-        log_success "Created docker-compose.override.yml with host networking"
-    fi
-    
-    log_success "Webhook deploy service configured"
-    echo ""
-    log_info "Deploy secret saved to $ENV_FILE"
-    log_info "You can now use 'Quick Update' and 'Full Rebuild' buttons in Dashboard Settings"
-    
-    WEBHOOK_INSTALLED=1
-else
-    log_info "Skipping webhook installation"
-    log_info "You can install it later by following: infrastructure/WEBHOOK_SETUP.md"
-    WEBHOOK_INSTALLED=0
-fi
-
-echo ""
 
 # ============================================================================
 # FINAL STEPS
@@ -1586,26 +1560,30 @@ echo "  2. Check status:"
 echo "     sudo systemctl status cliproxyapi-stack"
 echo ""
 echo "  3. View logs:"
-echo "     cd $INSTALL_DIR"
-echo "     docker compose --env-file infrastructure/.env -f docker-compose.yml logs -f"
+echo "     cd $RUNTIME_ROOT"
+echo "     docker compose --env-file .env -f docker-compose.yml logs -f"
 echo ""
-if [ $EXTERNAL_PROXY -eq 1 ]; then
-    echo "  4. Configure your reverse proxy:"
-    echo "     - Dashboard routes to: localhost:8318"
-    echo "     - API routes to: localhost:8317"
-    echo "     - Ports 80/443 not bound by this stack"
+echo "  4. Local IP: $LOCAL_IP"
+if [ "$ACCESS_MODE" = "cloudflare" ]; then
+    echo "     Dashboard local URL: http://${LOCAL_IP}:8318"
+    echo "     API local URL: http://${LOCAL_IP}:8317"
     echo ""
-    echo "  5. Access services (via your reverse proxy):"
-    echo "     Dashboard: https://${DASHBOARD_SUBDOMAIN}.${DOMAIN}"
-    echo "     API: https://${API_SUBDOMAIN}.${DOMAIN}"
+    echo "  5. Cloudflare Tunnel origin targets:"
+    echo "     Dashboard origin target: http://${LOCAL_IP}:8318"
+    echo "     API origin target: http://${LOCAL_IP}:8317"
+    echo "     Configure your Cloudflare hostnames to point to those origin targets."
+    echo ""
+elif [ "$ACCESS_MODE" = "local" ]; then
+    echo "     Dashboard: http://${LOCAL_IP}:8318"
+    echo "     API: http://${LOCAL_IP}:8317"
     echo ""
 else
-    echo "  4. Access services (via integrated Caddy):"
+    echo "     Domain URLs:"
     echo "     Dashboard: https://${DASHBOARD_SUBDOMAIN}.${DOMAIN}"
     echo "     API: https://${API_SUBDOMAIN}.${DOMAIN}"
     echo ""
 fi
-echo "  $([ $EXTERNAL_PROXY -eq 1 ] && echo 5 || echo 4). Create your admin account at the dashboard, then configure"
+echo "  5. Create your admin account at the dashboard, then configure"
 echo "     API keys and providers through the Configuration page."
 echo ""
 log_info "Backup commands:"
@@ -1626,5 +1604,6 @@ if [ "$DB_MODE" = "external" ]; then
     echo "                  (current helper scripts only support compose-managed postgres)"
 fi
 echo ""
-log_warning "Secrets are stored in: $ENV_FILE (DO NOT commit to git)"
+log_warning "Secrets are stored in: $ENV_FILE"
+log_warning "Install metadata is stored in: $INSTALL_INFO_FILE"
 echo ""

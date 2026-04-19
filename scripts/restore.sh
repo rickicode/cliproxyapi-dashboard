@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-ENV_FILE="$PROJECT_DIR/infrastructure/.env"
+ENV_FILE="$PROJECT_DIR/.env"
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 
 normalize_env_value() {
@@ -114,7 +114,7 @@ compose exec -T postgres psql -U cliproxyapi -d cliproxyapi -c "DROP SCHEMA publ
 compose exec -T postgres psql -U cliproxyapi -d cliproxyapi < "$TMP_DIR/database.sql"
 
 echo "[INFO] Restoring config.yaml..."
-cp "$TMP_DIR/config.yaml" "$PROJECT_DIR/infrastructure/config/config.yaml"
+cp "$TMP_DIR/config.yaml" "$PROJECT_DIR/config/config.yaml"
 
 echo "[INFO] Restoring auth directory..."
 if [ ! -f "$TMP_DIR/auth-dir.tar.gz" ]; then

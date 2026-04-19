@@ -54,7 +54,7 @@ Open **http://localhost:8318** → create admin account → done.
 
 ## Server Installation
 
-For a production/server install, use the interactive installer on Ubuntu 20.04+ or Debian 11+ with a domain or subdomains ready to point at the server.
+For a production/server install, use the interactive installer on Ubuntu 20.04+ or Debian 11+. A public domain is optional.
 
 ```bash
 git clone https://github.com/itsmylife44/cliproxyapi-dashboard.git
@@ -62,7 +62,14 @@ cd cliproxyapi-dashboard
 sudo ./install.sh
 ```
 
-The installer is interactive and asks about your domain/subdomains, reverse proxy mode, database mode, and optional Perplexity sidecar. Docker and Docker Compose are installed automatically if needed.
+The installer is interactive and asks about:
+
+- access mode: domain + bundled Caddy, Cloudflare Tunnel, or local IP only
+- database mode: bundled Docker Postgres or external/custom Postgres
+- optional Perplexity sidecar
+- backup scheduling for bundled Postgres installs
+
+Docker and Docker Compose are installed automatically if needed. The runtime bundle is installed under `/opt/cliproxyapi` and fetches the required Compose/config/script files from GitHub raw URLs, so the production runtime does not depend on a persistent local git checkout.
 
 See the [Installation Guide](docs/INSTALLATION.md) for the full walkthrough.
 
