@@ -24,8 +24,8 @@ Configuration is managed through `/opt/cliproxyapi/.env` for installer-managed p
 | `INSTALL_DIR` | Yes | Absolute path to runtime root | `/opt/cliproxyapi` |
 | `CLIPROXYAPI_BIND_ADDRESS` | Yes | API bind address for host exposure | `127.0.0.1` or `0.0.0.0` |
 | `DASHBOARD_BIND_ADDRESS` | Yes | Dashboard bind address for host exposure | `127.0.0.1` or `0.0.0.0` |
-| `COMPOSE_PROFILES` | No | Compose profiles enabled by installer | `caddy`, `perplexity` |
-| `CLOUDFLARE_TUNNEL_TOKEN` | Cloudflare mode only | Tunnel token used to install `cloudflared.service` | Generated from installer input |
+| `COMPOSE_PROFILES` | No | Compose profiles enabled by installer | `caddy`, `cloudflare`, `perplexity` |
+| `CLOUDFLARE_TUNNEL_TOKEN` | Cloudflare mode only | Tunnel token consumed by the Compose-managed `cloudflared` container | Generated from installer input |
 | `TZ` | No | Server timezone | `UTC` |
 
 ### Dashboard (set in `/opt/cliproxyapi/.env` or container environment)

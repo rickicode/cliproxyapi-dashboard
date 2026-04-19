@@ -57,9 +57,7 @@ Open **http://localhost:8318** → create admin account → done.
 For a production/server install, use the interactive installer on Ubuntu 20.04+ or Debian 11+. A public domain is optional.
 
 ```bash
-git clone https://github.com/itsmylife44/cliproxyapi-dashboard.git
-cd cliproxyapi-dashboard
-sudo ./install.sh
+curl -fsSL <installer-url> | sudo bash
 ```
 
 The installer is interactive and asks about:
@@ -70,6 +68,8 @@ The installer is interactive and asks about:
 - backup scheduling for bundled Postgres installs
 
 Docker and Docker Compose are installed automatically if needed. The runtime bundle is installed under `/opt/cliproxyapi` and fetches the required Compose/config/script files from GitHub raw URLs, so the production runtime does not depend on a persistent local git checkout.
+
+Cloudflare Tunnel mode is now Compose-managed too: the installer writes `CLOUDFLARE_TUNNEL_TOKEN` into the runtime `.env`, enables the `cloudflare` compose profile, and starts a `cloudflared` container instead of installing a host-level `cloudflared.service`.
 
 See the [Installation Guide](docs/INSTALLATION.md) for the full walkthrough.
 

@@ -40,7 +40,7 @@ docker compose --env-file .env -f docker-compose.yml down
 - Use `sudo systemctl restart cliproxyapi-stack` for the common restart path.
 - Use `docker compose --env-file .env -f docker-compose.yml ...` from `/opt/cliproxyapi` for direct operational tasks such as logs, `ps`, or manual troubleshooting.
 - If the install uses external/custom PostgreSQL, keep treating the bundled `postgres` service as inert and perform DB backups/restores through the external platform.
-- If the install uses Cloudflare Tunnel mode, also manage `cloudflared.service` separately.
+- If the install uses Cloudflare Tunnel mode, manage `cloudflared` through the same Compose project, not a separate host service.
 
 #### Local Development
 

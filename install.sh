@@ -223,61 +223,6 @@ EOF
     chmod 600 "$INSTALL_INFO_FILE"
 }
 
-install_cloudflared_package() {
-    if command -v cloudflared &> /dev/null; then
-        log_success "cloudflared already installed"
-        return 0
-    fi
-
-    log_info "Installing cloudflared from Cloudflare apt repository..."
-    mkdir -p /usr/share/keyrings
-    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
-    cat > /etc/apt/sources.list.d/cloudflared.list <<'EOF'
-deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main
-EOF
-    apt-get update
-    apt-get install -y cloudflared
-
-    if ! command -v cloudflared &> /dev/null; then
-        log_error "cloudflared installation failed"
-        exit 1
-    fi
-}
-
-install_cloudflared_service() {
-    if [ "$ACCESS_MODE" != "cloudflare" ]; then
-        return 0
-    fi
-
-    log_info "=== Cloudflare Tunnel Service Setup ==="
-    echo ""
-
-    install_cloudflared_package
-
-    if systemctl list-unit-files cloudflared.service >/dev/null 2>&1; then
-        log_warning "cloudflared service already exists"
-        read -p "Reinstall cloudflared service with the new token? [y/N]: " REINSTALL_CLOUDFLARED
-        if [[ "$REINSTALL_CLOUDFLARED" =~ ^[Yy]$ ]]; then
-            cloudflared service uninstall || true
-        else
-            log_info "Keeping existing cloudflared service"
-            return 0
-        fi
-    fi
-
-    cloudflared service install "$CLOUDFLARE_TUNNEL_TOKEN"
-    systemctl daemon-reload
-    systemctl enable cloudflared.service
-    systemctl restart cloudflared.service
-
-    if ! systemctl is-active --quiet cloudflared.service; then
-        log_error "cloudflared.service failed to start"
-        exit 1
-    fi
-
-    log_success "cloudflared service installed and running"
-}
-
 log_override_manual_merge_warning() {
     local override_file=$1
     local reason=$2
@@ -911,6 +856,12 @@ if [ "$ACCESS_MODE" = "domain" ]; then
     CLIPROXYAPI_BIND_ADDRESS="127.0.0.1"
     DASHBOARD_BIND_ADDRESS="127.0.0.1"
     COMPOSE_PROFILES_VALUE="caddy"
+elif [ "$ACCESS_MODE" = "cloudflare" ]; then
+    DASHBOARD_URL="http://${LOCAL_IP}:8318"
+    API_URL="http://${LOCAL_IP}:8317"
+    CLIPROXYAPI_BIND_ADDRESS="0.0.0.0"
+    DASHBOARD_BIND_ADDRESS="0.0.0.0"
+    COMPOSE_PROFILES_VALUE="cloudflare"
 else
     DASHBOARD_URL="http://${LOCAL_IP}:8318"
     API_URL="http://${LOCAL_IP}:8317"
@@ -929,6 +880,7 @@ if [ "$ACCESS_MODE" = "domain" ]; then
     log_info "  API: ${API_SUBDOMAIN}.${DOMAIN}"
 elif [ "$ACCESS_MODE" = "cloudflare" ]; then
     log_info "  Cloudflare Tunnel: enabled"
+    log_info "  Cloudflare Tunnel runtime: docker compose profile"
 else
     log_info "  Cloudflare Tunnel: disabled"
 fi
@@ -1101,10 +1053,6 @@ log_info "Verified Docker Compose: $COMPOSE_VERSION"
 ensure_runtime_directories
 fetch_runtime_bundle
 validate_runtime_compose_template
-
-if [ "$ACCESS_MODE" = "cloudflare" ]; then
-    install_cloudflared_package
-fi
 
 echo ""
 
@@ -1430,9 +1378,6 @@ EOF
     
     log_success "Systemd service installed and enabled for automatic stack startup on boot"
 fi
-
-echo ""
-install_cloudflared_service
 
 echo ""
 

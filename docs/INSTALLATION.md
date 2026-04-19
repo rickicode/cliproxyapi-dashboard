@@ -49,9 +49,7 @@ Replace `example.com` with your actual domain and `YOUR_SERVER_IP` with your ser
 The fastest way to get started is using the automated installer:
 
 ```bash
-git clone https://github.com/itsmylife44/cliproxyapi-dashboard.git
-cd cliproxyapi-dashboard
-sudo ./install.sh
+curl -fsSL <installer-url> | sudo bash
 ```
 
 ![Quick Start](code-snippets/quick-start.png)
@@ -65,9 +63,9 @@ The installer will:
 6. Fetch the runtime bundle files into `/opt/cliproxyapi` from GitHub raw URLs
 7. Create the production environment file at `/opt/cliproxyapi/.env` and install metadata at `/opt/cliproxyapi/metadata/install-info.env`
 8. Create and enable a systemd service for startup on boot
-9. Install and configure `cloudflared` when Cloudflare Tunnel mode is selected
-9. Optionally set up automated daily or weekly backups when using the bundled PostgreSQL service
-10. Remove only the legacy installer-managed `/api/usage/collect` cron entry/comment because periodic usage collection is now handled internally by the dashboard app
+9. Enable the Docker Compose `cloudflare` profile and start the `cloudflared` container when Cloudflare Tunnel mode is selected
+10. Optionally set up automated daily or weekly backups when using the bundled PostgreSQL service
+11. Remove only the legacy installer-managed `/api/usage/collect` cron entry/comment because periodic usage collection is now handled internally by the dashboard app
 
 ### Post-Installation
 
@@ -83,14 +81,17 @@ docker compose --env-file .env -f docker-compose.yml logs -f
 Access after install depends on your selected mode:
 
 - **Domain mode**: `https://dashboard.yourdomain.com` and `https://api.yourdomain.com`
-- **Cloudflare Tunnel mode**: use the Cloudflare hostnames you configure, pointing them at `http://SERVER_IP:8318` and `http://SERVER_IP:8317`
+- **Cloudflare Tunnel mode**: use the Cloudflare hostnames you configure. The `cloudflared` container runs inside the same production Compose project and tunnels internally to `dashboard:8318` and `cliproxyapi:8317`. Host ports `http://SERVER_IP:8318` and `http://SERVER_IP:8317` also remain open.
 - **Local IP mode**: `http://SERVER_IP:8318` and `http://SERVER_IP:8317`
 
 > **Usage collection**: You do not need to configure an OS cron job for periodic usage collection. The dashboard app owns this scheduling internally and continues collecting usage data without an installer-managed cron dependency. If you run your own external automation against `POST /api/usage/collect`, that remains supported and the installer cleanup does not remove it.
 
 ### Initial Setup Flow
 
-1. **First Visit**: Navigate to `https://dashboard.yourdomain.com`
+1. **First Visit**:
+   - domain mode: navigate to `https://dashboard.yourdomain.com`
+   - Cloudflare mode: open the hostname you configured in Cloudflare Tunnel
+   - local mode: open `http://SERVER_IP:8318`
 2. **Automatic Redirect**: You'll be redirected to `/setup` (the setup wizard)
 3. **Create Admin Account**: Enter your desired username and password
 4. **Setup Disabled**: After creating the first user, the setup page becomes inaccessible
@@ -327,6 +328,8 @@ sudo systemctl enable cliproxyapi-stack
 ```
 
 In domain mode, the installer adds the bundled Caddy profile. In local-IP and Cloudflare modes, the dashboard and API are exposed directly on `8318` and `8317` without Caddy.
+
+In Cloudflare Tunnel mode, the same runtime bundle also starts a `cloudflared` container via the `cloudflare` compose profile. The installer does **not** install a host-level `cloudflared.service` anymore.
 
 ### 7. Start the Stack
 

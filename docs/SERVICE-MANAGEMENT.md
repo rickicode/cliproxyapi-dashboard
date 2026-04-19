@@ -84,11 +84,13 @@ If you use `docker compose down` directly, treat it as a continuity-breaking ope
 
 If the host was installed in **external/custom PostgreSQL** mode, the bundled `postgres` service should remain inert. Use these Compose commands for the rest of the production stack, but perform database backups/restores through your external PostgreSQL tooling rather than through bundled helpers.
 
-If the host was installed in **Cloudflare Tunnel** mode, manage the tunnel service separately:
+If the host was installed in **Cloudflare Tunnel** mode, manage the tunnel container through the same Compose project:
 
 ```bash
-sudo systemctl status cloudflared
-sudo systemctl restart cloudflared
+cd /opt/cliproxyapi
+docker compose --env-file .env -f docker-compose.yml ps cloudflared
+docker compose --env-file .env -f docker-compose.yml logs -f cloudflared
+docker compose --env-file .env -f docker-compose.yml restart cloudflared
 ```
 
 ![Docker Commands](code-snippets/docker-commands.png)

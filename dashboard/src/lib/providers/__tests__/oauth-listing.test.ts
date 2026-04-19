@@ -283,12 +283,14 @@ describe("listOAuthAccounts", () => {
     findManyMock.mockResolvedValueOnce([
       {
         id: "ownership-1",
+        provider: "claude",
         accountName: "owned@example.com.json",
         userId: "user-1",
         user: { id: "user-1", username: "ricki" },
       },
       {
         id: "ownership-2",
+        provider: "gemini-cli",
         accountName: "teammate@example.com.json",
         userId: "user-2",
         user: { id: "user-2", username: "teammate" },
@@ -368,12 +370,14 @@ describe("listOAuthAccounts", () => {
     findManyMock.mockResolvedValueOnce([
       {
         id: "ownership-1",
+        provider: "claude",
         accountName: "owned@example.com.json",
         userId: "user-1",
         user: { id: "user-1", username: "ricki" },
       },
       {
         id: "ownership-2",
+        provider: "gemini-cli",
         accountName: "teammate@example.com.json",
         userId: "user-2",
         user: { id: "user-2", username: "teammate" },
@@ -421,22 +425,46 @@ describe("listOAuthAccounts", () => {
 
 describe("bulkUpdateOAuthAccounts", () => {
   it("skips ineligible bulk selections and reports partial-success failures without aborting", async () => {
-    findUniqueMock.mockImplementation(async ({ where }: { where: { id?: string; accountName?: string } }) => {
-      if (where.accountName === "owned@example.com.json") {
-        return { id: "ownership-1", userId: "user-1", accountName: "owned@example.com.json" };
-      }
+    findUniqueMock.mockImplementation(
+      async ({
+        where,
+      }: {
+        where: { id?: string; accountName?: string; provider_accountName?: { provider: string; accountName: string } };
+      }) => {
+        if (where.id === "owned@example.com.json") {
+          return null;
+        }
 
-      if (where.accountName === "teammate@example.com.json") {
-        return { id: "ownership-2", userId: "user-2", accountName: "teammate@example.com.json" };
-      }
+        if (
+          where.provider_accountName?.provider === "claude" &&
+          where.provider_accountName.accountName === "owned@example.com.json"
+        ) {
+          return { id: "ownership-1", userId: "user-1", accountName: "owned@example.com.json" };
+        }
 
-      return null;
-    });
+        if (where.id === "teammate@example.com.json") {
+          return null;
+        }
+
+        if (
+          where.provider_accountName?.provider === "gemini-cli" &&
+          where.provider_accountName.accountName === "teammate@example.com.json"
+        ) {
+          return { id: "ownership-2", userId: "user-2", accountName: "teammate@example.com.json" };
+        }
+
+        return null;
+      }
+    );
     fetchWithTimeoutMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
     const result = await bulkUpdateOAuthAccounts("user-1", false, {
       action: "disable",
-      actionKeys: ["owned@example.com.json", "", "teammate@example.com.json"],
+      actionKeys: [
+        "oauth:claude:owned%40example.com.json:owned@example.com.json",
+        "",
+        "oauth:gemini:teammate%40example.com.json:teammate@example.com.json",
+      ],
     });
 
     expect(result).toEqual({
@@ -444,33 +472,67 @@ describe("bulkUpdateOAuthAccounts", () => {
       summary: { total: 3, successCount: 1, failureCount: 2 },
       failures: [
         { actionKey: "", reason: "Missing action key" },
-        { actionKey: "teammate@example.com.json", reason: "Access denied" },
+        {
+          actionKey: "oauth:gemini:teammate%40example.com.json:teammate@example.com.json",
+          reason: "Access denied",
+        },
       ],
     });
     expect(fetchWithTimeoutMock).toHaveBeenCalledTimes(1);
     expect(fetchWithTimeoutMock).toHaveBeenCalledWith(
-      "http://localhost:8317/auth-files?name=owned%40example.com.json",
-      expect.objectContaining({ method: "POST" })
+      "http://localhost:8317/auth-files?name=owned%40example.com.json&provider=claude",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "owned@example.com.json",
+          provider: "claude",
+          disabled: true,
+        }),
+      })
     );
   });
 
   it("supports disconnect bulk operations with the same partial-success behavior", async () => {
-    findUniqueMock.mockImplementation(async ({ where }: { where: { id?: string; accountName?: string } }) => {
-      if (where.accountName === "owned@example.com.json") {
-        return { id: "ownership-1", userId: "user-1", accountName: "owned@example.com.json" };
-      }
+    findUniqueMock.mockImplementation(
+      async ({
+        where,
+      }: {
+        where: { id?: string; accountName?: string; provider_accountName?: { provider: string; accountName: string } };
+      }) => {
+        if (where.id === "owned@example.com.json") {
+          return null;
+        }
 
-      if (where.accountName === "teammate@example.com.json") {
-        return { id: "ownership-2", userId: "user-2", accountName: "teammate@example.com.json" };
-      }
+        if (
+          where.provider_accountName?.provider === "claude" &&
+          where.provider_accountName.accountName === "owned@example.com.json"
+        ) {
+          return { id: "ownership-1", userId: "user-1", accountName: "owned@example.com.json" };
+        }
 
-      return null;
-    });
+        if (where.id === "teammate@example.com.json") {
+          return null;
+        }
+
+        if (
+          where.provider_accountName?.provider === "gemini-cli" &&
+          where.provider_accountName.accountName === "teammate@example.com.json"
+        ) {
+          return { id: "ownership-2", userId: "user-2", accountName: "teammate@example.com.json" };
+        }
+
+        return null;
+      }
+    );
     fetchWithTimeoutMock.mockResolvedValueOnce(new Response(null, { status: 200 }));
 
     const result = await bulkUpdateOAuthAccounts("user-1", false, {
       action: "disconnect",
-      actionKeys: ["owned@example.com.json", "", "teammate@example.com.json"],
+      actionKeys: [
+        "oauth:claude:owned%40example.com.json:owned@example.com.json",
+        "",
+        "oauth:gemini:teammate%40example.com.json:teammate@example.com.json",
+      ],
     });
 
     expect(result).toEqual({
@@ -478,12 +540,15 @@ describe("bulkUpdateOAuthAccounts", () => {
       summary: { total: 3, successCount: 1, failureCount: 2 },
       failures: [
         { actionKey: "", reason: "Missing action key" },
-        { actionKey: "teammate@example.com.json", reason: "Access denied" },
+        {
+          actionKey: "oauth:gemini:teammate%40example.com.json:teammate@example.com.json",
+          reason: "Access denied",
+        },
       ],
     });
     expect(fetchWithTimeoutMock).toHaveBeenCalledTimes(1);
     expect(fetchWithTimeoutMock).toHaveBeenCalledWith(
-      "http://localhost:8317/auth-files?name=owned%40example.com.json",
+      "http://localhost:8317/auth-files?name=owned%40example.com.json&provider=claude",
       expect.objectContaining({ method: "DELETE" })
     );
     expect(deleteMock).toHaveBeenCalledWith({ where: { id: "ownership-1" } });
