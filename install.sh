@@ -65,6 +65,8 @@ detect_local_ip() {
 }
 
 resolve_github_fetch_ref() {
+    local manual_ref=""
+
     if [ -n "${CLIPROXYAPI_INSTALLER_REF:-}" ]; then
         printf '%s\n' "$CLIPROXYAPI_INSTALLER_REF"
         return 0
@@ -75,9 +77,19 @@ resolve_github_fetch_ref() {
         return 0
     fi
 
-    log_error "Unable to determine installer Git ref for runtime bundle fetches"
-    log_error "Run the installer from a git checkout or set CLIPROXYAPI_INSTALLER_REF to a tag/commit SHA"
-    exit 1
+    log_warning "Installer is not running from a git checkout"
+    log_warning "Runtime bundle fetches need an explicit Git tag or commit SHA"
+
+    while true; do
+        read -r -p "Enter installer ref (tag or commit SHA): " manual_ref
+        if [ -z "$manual_ref" ]; then
+            log_error "Installer ref cannot be empty"
+            continue
+        fi
+
+        printf '%s\n' "$manual_ref"
+        return 0
+    done
 }
 
 ensure_runtime_directories() {
