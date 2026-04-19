@@ -92,6 +92,57 @@ resolve_github_fetch_ref() {
     done
 }
 
+resolve_github_repository() {
+    local remote_url=""
+    local trimmed=""
+    local normalized=""
+    local manual_repo=""
+
+    if [ -n "${CLIPROXYAPI_INSTALLER_REPOSITORY:-}" ]; then
+        printf '%s\n' "$CLIPROXYAPI_INSTALLER_REPOSITORY"
+        return 0
+    fi
+
+    if command -v git &> /dev/null; then
+        remote_url=$(git -C "$INSTALLER_SOURCE_DIR" remote get-url origin 2>/dev/null || true)
+        if [ -n "$remote_url" ]; then
+            trimmed=${remote_url%.git}
+
+            if [[ "$trimmed" =~ ^git@github\.com:(.+/.+)$ ]]; then
+                normalized=${BASH_REMATCH[1]}
+            elif [[ "$trimmed" =~ ^https?://github\.com/(.+/.+)$ ]]; then
+                normalized=${BASH_REMATCH[1]}
+            fi
+
+            if [ -n "$normalized" ]; then
+                printf '%s\n' "$normalized"
+                return 0
+            fi
+
+            log_warning "Origin remote is not a supported GitHub URL: $remote_url"
+        fi
+    fi
+
+    log_warning "Unable to derive GitHub repository from installer checkout"
+    log_warning "Runtime bundle fetches need an explicit GitHub repository in owner/name form"
+
+    while true; do
+        read -r -p "Enter installer GitHub repository (owner/name): " manual_repo
+        if [ -z "$manual_repo" ]; then
+            log_error "GitHub repository cannot be empty"
+            continue
+        fi
+
+        if [[ ! "$manual_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            log_error "GitHub repository must use owner/name format"
+            continue
+        fi
+
+        printf '%s\n' "$manual_repo"
+        return 0
+    done
+}
+
 ensure_runtime_directories() {
     mkdir -p "$RUNTIME_ROOT" "$RUNTIME_CONFIG_DIR" "$RUNTIME_INFRA_DIR/config" "$RUNTIME_METADATA_DIR" "$RUNTIME_SCRIPTS_DIR" "$RUNTIME_BACKUPS_DIR"
 }
@@ -607,7 +658,7 @@ RUNTIME_CONFIG_FILE="$RUNTIME_CONFIG_DIR/config.yaml"
 RUNTIME_CADDY_FILE="$RUNTIME_CONFIG_DIR/Caddyfile"
 ENV_FILE="$RUNTIME_ROOT/.env"
 INSTALL_INFO_FILE="$RUNTIME_METADATA_DIR/install-info.env"
-GITHUB_REPOSITORY="rickicode/cliproxyapi-dashboard"
+GITHUB_REPOSITORY="$(resolve_github_repository)"
 GITHUB_REF="$(resolve_github_fetch_ref)"
 GITHUB_RAW_BASE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF}"
 
