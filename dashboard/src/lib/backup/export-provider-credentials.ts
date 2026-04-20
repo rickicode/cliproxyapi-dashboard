@@ -8,6 +8,7 @@ import {
   type ProviderCredentialsBackupEnvelope,
 } from "@/lib/backup/types";
 import { MANAGEMENT_BASE_URL, MANAGEMENT_API_KEY, fetchWithTimeout } from "@/lib/providers/management-api";
+import { logger } from "@/lib/logger";
 
 class BackupCredentialDownloadError extends Error {
   constructor(message: string) {
@@ -64,30 +65,40 @@ export async function exportProviderCredentialsBackup(): Promise<ProviderCredent
   const entries: ProviderCredentialsBackupEnvelope["payload"]["entries"] = [];
 
   for (const [index, item] of providerOAuth.entries()) {
-    const content = await fetchOAuthCredentialContent(item.accountName);
+    try {
+      const content = await fetchOAuthCredentialContent(item.accountName);
 
-    const accessToken = typeof content.access_token === "string" ? content.access_token : null;
-    const refreshToken = typeof content.refresh_token === "string" ? content.refresh_token : null;
+      const accessToken = typeof content.access_token === "string" ? content.access_token : null;
+      const refreshToken = typeof content.refresh_token === "string" ? content.refresh_token : null;
 
-    if (!accessToken || !refreshToken) {
-      throw new BackupCredentialDownloadError(
-        `OAuth credential for ${item.accountName} is missing access_token or refresh_token`
+      if (!accessToken || !refreshToken) {
+        logger.warn(
+          { accountName: item.accountName, provider: item.provider },
+          "Skipping OAuth credential without access_token or refresh_token"
+        );
+        continue;
+      }
+
+      entries.push({
+        id: `${item.provider}:${item.accountName}:${index + 1}`,
+        provider: item.provider,
+        authType: "oauth",
+        name: item.accountName,
+        priority: index + 1,
+        isActive: true,
+        accessToken,
+        refreshToken,
+        idToken: typeof content.id_token === "string" ? content.id_token : null,
+        expiresAt: typeof content.expires_at === "string" ? content.expires_at : null,
+        expiresIn: typeof content.expires_in === "number" ? content.expires_in : null,
+      });
+    } catch (error) {
+      logger.warn(
+        { err: error, accountName: item.accountName, provider: item.provider },
+        "Skipping OAuth credential during backup export"
       );
+      continue;
     }
-
-    entries.push({
-      id: `${item.provider}:${item.accountName}:${index + 1}`,
-      provider: item.provider,
-      authType: "oauth",
-      name: item.accountName,
-      priority: index + 1,
-      isActive: true,
-      accessToken,
-      refreshToken,
-      idToken: typeof content.id_token === "string" ? content.id_token : null,
-      expiresAt: typeof content.expires_at === "string" ? content.expires_at : null,
-      expiresIn: typeof content.expires_in === "number" ? content.expires_in : null,
-    });
   }
 
   return {

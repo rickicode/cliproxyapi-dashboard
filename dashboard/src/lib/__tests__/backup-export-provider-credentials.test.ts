@@ -55,7 +55,7 @@ describe("exportProviderCredentialsBackup", () => {
     });
   });
 
-  it("fails when credential download is missing tokens", async () => {
+  it("skips when credential download is missing tokens", async () => {
     const { prisma } = await import("@/lib/db");
     const { fetchWithTimeout } = await import("@/lib/providers/management-api");
     (prisma.providerOAuthOwnership.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
@@ -72,6 +72,7 @@ describe("exportProviderCredentialsBackup", () => {
 
     const { exportProviderCredentialsBackup } = await import("@/lib/backup/export-provider-credentials");
 
-    await expect(exportProviderCredentialsBackup()).rejects.toThrow(/missing access_token or refresh_token/i);
+    const result = await exportProviderCredentialsBackup();
+    expect(result.payload.entries).toHaveLength(0);
   });
 });
