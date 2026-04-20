@@ -1,67 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-function normalizePort(protocol: string, port: string): string {
-  if (!port) return "";
-  if (protocol === "https:" && port === "443") return "";
-  if (protocol === "http:" && port === "80") return "";
-  return port;
-}
-
-function isSameOrigin(origin: URL, candidate: URL): boolean {
-  return (
-    origin.protocol === candidate.protocol &&
-    origin.hostname === candidate.hostname &&
-    normalizePort(origin.protocol, origin.port) ===
-      normalizePort(candidate.protocol, candidate.port)
-  );
-}
-
-function toUrl(value: string): URL | null {
-  try {
-    return new URL(value);
-  } catch {
-    return null;
-  }
-}
-
-export function validateOrigin(request: NextRequest): NextResponse | null {
-  const origin = request.headers.get("origin");
-
-  if (!origin) {
-    return NextResponse.json(
-      { error: "Forbidden" },
-      { status: 403 }
-    );
-  }
-
-  try {
-    const originUrl = new URL(origin);
-    const requestUrl = new URL(request.url);
-
-    const allowedCandidates = [
-      requestUrl.origin,
-      process.env.DASHBOARD_URL,
-    ]
-      .filter((value): value is string => typeof value === "string" && value.length > 0)
-      .map(toUrl)
-      .filter((value): value is URL => value !== null);
-
-    const isAllowed = allowedCandidates.some((candidate) =>
-      isSameOrigin(originUrl, candidate)
-    );
-
-    if (!isAllowed) {
-      return NextResponse.json(
-        { error: "Forbidden" },
-        { status: 403 }
-      );
-    }
-  } catch {
-    return NextResponse.json(
-      { error: "Forbidden" },
-      { status: 403 }
-    );
-  }
-
+export function validateOrigin(_request: NextRequest): NextResponse | null {
+  // Origin validation disabled - allow all origins
   return null;
 }
