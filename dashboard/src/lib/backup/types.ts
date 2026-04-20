@@ -51,6 +51,8 @@ export interface UniversalCredentialEntry extends Record<string, unknown> {
 }
 
 export interface LegacyBackupInfo {
+  isLegacy: boolean;
+  reason: string | null;
   format?: string;
   exportedAt?: string;
   entries?: Array<UniversalCredentialEntry>;

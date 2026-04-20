@@ -10,6 +10,18 @@ import { prisma } from "@/lib/db";
 import { Errors, apiSuccess } from "@/lib/errors";
 import { BackupTypeSchema } from "@/lib/validation/backup";
 
+function normalizeBackupQueryType(value: string | null): string | null {
+  if (value === BACKUP_TYPE.SETTINGS) {
+    return BACKUP_TYPE.SETTINGS;
+  }
+
+  if (value === BACKUP_TYPE.PROVIDER_CREDENTIALS || value === "provider-credentials") {
+    return BACKUP_TYPE.PROVIDER_CREDENTIALS;
+  }
+
+  return null;
+}
+
 async function requireAdmin(): Promise<{ userId: string; username: string } | NextResponse> {
   const session = await verifySession();
   if (!session) {
@@ -35,8 +47,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const searchParams = new URL(request.url).searchParams;
     const typeResult = BackupTypeSchema.safeParse(
-      new URL(request.url).searchParams.get("type")
+      normalizeBackupQueryType(searchParams.get("type") ?? searchParams.get("mode"))
     );
     if (!typeResult.success) {
       return Errors.zodValidation(typeResult.error.issues);
