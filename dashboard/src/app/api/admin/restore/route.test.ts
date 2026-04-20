@@ -112,8 +112,7 @@ describe("POST /api/admin/restore", () => {
       type: BACKUP_TYPE.PROVIDER_CREDENTIALS,
       version: BACKUP_VERSION,
       summary: {
-        providerKeys: { created: 1, updated: 2, skipped: 3, failed: 4 },
-        providerOAuth: { created: 5, updated: 6, skipped: 7, failed: 8 },
+        entries: { restored: 1, skipped: 2, failed: 3 },
       },
     } as never);
 
@@ -128,8 +127,23 @@ describe("POST /api/admin/restore", () => {
           exportedAt: "2026-04-14T12:00:00.000Z",
           sourceApp: "cliproxyapi-dashboard",
           payload: {
-            providerKeys: [],
-            providerOAuth: [],
+            format: "universal-credentials",
+            exportedAt: "2026-04-14T12:00:00.000Z",
+            entries: [
+              {
+                id: "codex:alice@example.com:1",
+                provider: "codex",
+                authType: "oauth",
+                name: "alice@example.com",
+                priority: 1,
+                isActive: true,
+                accessToken: "at",
+                refreshToken: "rt",
+                idToken: null,
+                expiresAt: null,
+                expiresIn: null,
+              },
+            ],
           },
         }),
       })
@@ -138,8 +152,7 @@ describe("POST /api/admin/restore", () => {
 
     expect(response.status).toBe(200);
     expect(data.result.summary).toEqual({
-      providerKeys: { created: 1, updated: 2, skipped: 3, failed: 4 },
-      providerOAuth: { created: 5, updated: 6, skipped: 7, failed: 8 },
+      entries: { restored: 1, skipped: 2, failed: 3 },
     });
   });
 });
