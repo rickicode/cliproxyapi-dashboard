@@ -57,7 +57,7 @@ Open **http://localhost:8318** → create admin account → done.
 For a production/server install, use the interactive installer on Ubuntu 20.04+ or Debian 11+. A public domain is optional.
 
 ```bash
-curl -fsSL https://github.com/rickicode/cliproxyapi-dashboard | sudo bash
+curl -fsSL https://raw.githubusercontent.com/rickicode/cliproxyapi-dashboard/main/install.sh | sudo bash
 ```
 
 The installer is interactive and asks about:
