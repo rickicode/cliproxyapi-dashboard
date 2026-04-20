@@ -1,0 +1,3514 @@
+{
+  "name": "cliproxyapi-dashboard",
+  "description": "CLIProxyAPI Dashboard is a Next.js 16 web UI for managing CLIProxyAPIPlus, which wraps OAuth-based CLI tools like Claude Code, Gemini CLI, and Codex as OpenAI-compatible APIs. It helps manage providers, API keys, configs, logs, and updates without editing YAML files. Note: this project has over 100 source files; consider scoping analysis to a subdirectory for faster results.",
+  "languages": [
+    "code",
+    "css",
+    "dockerfile",
+    "json",
+    "markdown",
+    "python",
+    "shell",
+    "sql",
+    "toml",
+    "typescript",
+    "yaml"
+  ],
+  "frameworks": [
+    "Docker Compose",
+    "GitHub Actions"
+  ],
+  "files": [
+    {
+      "path": ".all-contributorsrc",
+      "language": "code",
+      "sizeLines": 62,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".env.example",
+      "language": "code",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".github/release.yml",
+      "language": "yaml",
+      "sizeLines": 45,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".github/workflows/all-contributors.yml",
+      "language": "yaml",
+      "sizeLines": 21,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".github/workflows/release-build.yml",
+      "language": "yaml",
+      "sizeLines": 212,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "language": "yaml",
+      "sizeLines": 57,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".release-please-manifest.json",
+      "language": "json",
+      "sizeLines": 3,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".reports/codemap-diff.txt",
+      "language": "code",
+      "sizeLines": 24,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "AGENTS.md",
+      "language": "markdown",
+      "sizeLines": 293,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "dashboard/.dockerignore",
+      "language": "code",
+      "sizeLines": 66,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/.env.development",
+      "language": "code",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/CHANGELOG.md",
+      "language": "markdown",
+      "sizeLines": 1752,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "dashboard/config.dev.yaml.example",
+      "language": "code",
+      "sizeLines": 112,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/dev-local.ps1",
+      "language": "code",
+      "sizeLines": 247,
+      "fileCategory": "script"
+    },
+    {
+      "path": "dashboard/dev-local.sh",
+      "language": "shell",
+      "sizeLines": 339,
+      "fileCategory": "script"
+    },
+    {
+      "path": "dashboard/docker-compose.dev.yml",
+      "language": "yaml",
+      "sizeLines": 52,
+      "fileCategory": "config"
+    },
+    {
+      "path": "dashboard/Dockerfile",
+      "language": "dockerfile",
+      "sizeLines": 73,
+      "fileCategory": "infra"
+    },
+    {
+      "path": "dashboard/entrypoint.sh",
+      "language": "shell",
+      "sizeLines": 433,
+      "fileCategory": "script"
+    },
+    {
+      "path": "dashboard/eslint.config.mjs",
+      "language": "code",
+      "sizeLines": 18,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/messages/de.json",
+      "language": "json",
+      "sizeLines": 1772,
+      "fileCategory": "config"
+    },
+    {
+      "path": "dashboard/messages/en.json",
+      "language": "json",
+      "sizeLines": 1772,
+      "fileCategory": "config"
+    },
+    {
+      "path": "dashboard/next.config.ts",
+      "language": "typescript",
+      "sizeLines": 85,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/package.json",
+      "language": "json",
+      "sizeLines": 57,
+      "fileCategory": "config"
+    },
+    {
+      "path": "dashboard/playwright.config.ts",
+      "language": "typescript",
+      "sizeLines": 26,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/postcss.config.mjs",
+      "language": "code",
+      "sizeLines": 7,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/prisma.config.ts",
+      "language": "typescript",
+      "sizeLines": 12,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20250206_add_model_preferences/migration_lock.toml",
+      "language": "toml",
+      "sizeLines": 3,
+      "fileCategory": "config"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20250206_add_model_preferences/migration.sql",
+      "language": "sql",
+      "sizeLines": 16,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260206_add_sync_tokens/migration.sql",
+      "language": "sql",
+      "sizeLines": 18,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260207_add_config_sharing/migration.sql",
+      "language": "sql",
+      "sizeLines": 50,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260207_add_provider_ownership_models/migration.sql",
+      "language": "sql",
+      "sizeLines": 56,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260207_add_user_api_keys_and_admin/migration.sql",
+      "language": "sql",
+      "sizeLines": 23,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260208_add_custom_providers/migration.sql",
+      "language": "sql",
+      "sizeLines": 58,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260208_add_name_to_provider_key_ownership/migration.sql",
+      "language": "sql",
+      "sizeLines": 2,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260208_add_provider_key_composite_index/migration.sql",
+      "language": "sql",
+      "sizeLines": 2,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260208_add_sync_token_hash_index/migration.sql",
+      "language": "sql",
+      "sizeLines": 2,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260209_add_audit_logs/migration.sql",
+      "language": "sql",
+      "sizeLines": 24,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260210_add_user_session_version/migration.sql",
+      "language": "sql",
+      "sizeLines": 2,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260213000000_add_usage_tracking/migration.sql",
+      "language": "sql",
+      "sizeLines": 58,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260216_add_collected_at_index/migration.sql",
+      "language": "sql",
+      "sizeLines": 2,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260217_add_audit_target_usage_source_indexes/migration.sql",
+      "language": "sql",
+      "sizeLines": 5,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260221_add_perplexity_cookies/migration.sql",
+      "language": "sql",
+      "sizeLines": 22,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260225_add_provider_groups/migration.sql",
+      "language": "sql",
+      "sizeLines": 25,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260320_add_usage_latency_ms/migration.sql",
+      "language": "sql",
+      "sizeLines": 2,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260327_add_slim_overrides/migration.sql",
+      "language": "sql",
+      "sizeLines": 2,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260329_add_custom_provider_encrypted_key/migration.sql",
+      "language": "sql",
+      "sizeLines": 2,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260412_remove_sync_token_revoked_at/migration.sql",
+      "language": "sql",
+      "sizeLines": 5,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/20260419032000_provider_oauth_account_name_scoped_by_provider/migration.sql",
+      "language": "sql",
+      "sizeLines": 4,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/prisma/migrations/migration_lock.toml",
+      "language": "toml",
+      "sizeLines": 3,
+      "fileCategory": "config"
+    },
+    {
+      "path": "dashboard/prisma/schema.prisma",
+      "language": "code",
+      "sizeLines": 315,
+      "fileCategory": "data"
+    },
+    {
+      "path": "dashboard/scripts/prisma-generate.mjs",
+      "language": "code",
+      "sizeLines": 84,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/__e2e__/global-error/page.tsx",
+      "language": "typescript",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/admin/backup/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 65,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/admin/backup/route.ts",
+      "language": "typescript",
+      "sizeLines": 79,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/admin/deploy/route.ts",
+      "language": "typescript",
+      "sizeLines": 130,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/admin/logs/route.ts",
+      "language": "typescript",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/admin/migrate-api-keys/route.ts",
+      "language": "typescript",
+      "sizeLines": 115,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/admin/restore/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 145,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/admin/restore/route.ts",
+      "language": "typescript",
+      "sizeLines": 80,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/admin/revoke-sessions/route.ts",
+      "language": "typescript",
+      "sizeLines": 96,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/admin/settings/route.ts",
+      "language": "typescript",
+      "sizeLines": 93,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/admin/telegram/route.ts",
+      "language": "typescript",
+      "sizeLines": 313,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/admin/users/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 95,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/admin/users/route.ts",
+      "language": "typescript",
+      "sizeLines": 278,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/agent-config-slim/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/agent-config-slim/route.ts",
+      "language": "typescript",
+      "sizeLines": 149,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/agent-config/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/agent-config/route.ts",
+      "language": "typescript",
+      "sizeLines": 164,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/auth/change-password/route.ts",
+      "language": "typescript",
+      "sizeLines": 83,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/auth/login/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 98,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/auth/login/route.ts",
+      "language": "typescript",
+      "sizeLines": 130,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/auth/logout/route.ts",
+      "language": "typescript",
+      "sizeLines": 32,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/auth/me/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 109,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/auth/me/route.ts",
+      "language": "typescript",
+      "sizeLines": 46,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/config-sharing/publish/route.ts",
+      "language": "typescript",
+      "sizeLines": 258,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/config-sharing/subscribe/route.ts",
+      "language": "typescript",
+      "sizeLines": 315,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/config-sync/bundle/route.ts",
+      "language": "typescript",
+      "sizeLines": 39,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/config-sync/tokens/[id]/route.ts",
+      "language": "typescript",
+      "sizeLines": 100,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/config-sync/tokens/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 107,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/config-sync/tokens/route.ts",
+      "language": "typescript",
+      "sizeLines": 111,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/config-sync/version/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 63,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/config-sync/version/route.ts",
+      "language": "typescript",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/containers/[name]/action/route.ts",
+      "language": "typescript",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/containers/[name]/details/route.ts",
+      "language": "typescript",
+      "sizeLines": 107,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/containers/[name]/logs/route.ts",
+      "language": "typescript",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/containers/list/route.ts",
+      "language": "typescript",
+      "sizeLines": 138,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/custom-providers/[id]/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 163,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/custom-providers/[id]/route.ts",
+      "language": "typescript",
+      "sizeLines": 353,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/custom-providers/fetch-models/route.ts",
+      "language": "typescript",
+      "sizeLines": 238,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/custom-providers/reorder/route.ts",
+      "language": "typescript",
+      "sizeLines": 162,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/custom-providers/resync/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 56,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/custom-providers/resync/route.ts",
+      "language": "typescript",
+      "sizeLines": 25,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/custom-providers/route.ts",
+      "language": "typescript",
+      "sizeLines": 149,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/health/route.ts",
+      "language": "typescript",
+      "sizeLines": 63,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/management/[...path]/route.ts",
+      "language": "typescript",
+      "sizeLines": 408,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/management/oauth-callback/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 946,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/management/oauth-callback/route.ts",
+      "language": "typescript",
+      "sizeLines": 743,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/model-preferences/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 69,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/model-preferences/route.ts",
+      "language": "typescript",
+      "sizeLines": 86,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/oh-my-opencode/presets/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 71,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/oh-my-opencode/presets/route.ts",
+      "language": "typescript",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/provider-groups/[id]/route.ts",
+      "language": "typescript",
+      "sizeLines": 145,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/provider-groups/reorder/route.ts",
+      "language": "typescript",
+      "sizeLines": 52,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/provider-groups/route.ts",
+      "language": "typescript",
+      "sizeLines": 159,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/keys/[keyHash]/route.ts",
+      "language": "typescript",
+      "sizeLines": 81,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/keys/route.ts",
+      "language": "typescript",
+      "sizeLines": 119,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/oauth/[id]/route.ts",
+      "language": "typescript",
+      "sizeLines": 103,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/oauth/bulk/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 136,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/oauth/bulk/route.ts",
+      "language": "typescript",
+      "sizeLines": 75,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/oauth/claim/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 540,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/oauth/claim/route.ts",
+      "language": "typescript",
+      "sizeLines": 235,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/oauth/import/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 421,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/oauth/import/route.ts",
+      "language": "typescript",
+      "sizeLines": 141,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/oauth/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 308,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/oauth/route.ts",
+      "language": "typescript",
+      "sizeLines": 129,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/perplexity-cookie/current/route.ts",
+      "language": "typescript",
+      "sizeLines": 62,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/perplexity-cookie/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 247,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/perplexity-cookie/route.ts",
+      "language": "typescript",
+      "sizeLines": 324,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/providers/perplexity-cookie/sync-models/route.ts",
+      "language": "typescript",
+      "sizeLines": 212,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/proxy/oauth-settings/route.ts",
+      "language": "typescript",
+      "sizeLines": 31,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/proxy/status/route.ts",
+      "language": "typescript",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/quota/check-alerts/route.ts",
+      "language": "typescript",
+      "sizeLines": 68,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/quota/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 1970,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/quota/route.ts",
+      "language": "typescript",
+      "sizeLines": 2022,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/restart/route.ts",
+      "language": "typescript",
+      "sizeLines": 49,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/set-locale/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 83,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/set-locale/route.ts",
+      "language": "typescript",
+      "sizeLines": 59,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/setup-status/route.ts",
+      "language": "typescript",
+      "sizeLines": 109,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/setup/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 116,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/setup/route.ts",
+      "language": "typescript",
+      "sizeLines": 192,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/update/check/route.ts",
+      "language": "typescript",
+      "sizeLines": 192,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/update/dashboard/check/route.ts",
+      "language": "typescript",
+      "sizeLines": 119,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/update/dashboard/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 72,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/update/dashboard/route.ts",
+      "language": "typescript",
+      "sizeLines": 97,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/update/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 639,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/update/route.ts",
+      "language": "typescript",
+      "sizeLines": 364,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/usage/collect/route.test.ts",
+      "language": "typescript",
+      "sizeLines": 226,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/usage/collect/route.ts",
+      "language": "typescript",
+      "sizeLines": 89,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/usage/history/route.ts",
+      "language": "typescript",
+      "sizeLines": 391,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/usage/route.ts",
+      "language": "typescript",
+      "sizeLines": 433,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/user/api-keys/route.ts",
+      "language": "typescript",
+      "sizeLines": 178,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/api/user/config/route.ts",
+      "language": "typescript",
+      "sizeLines": 159,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/admin/backup/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 27,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/admin/backup/page.tsx",
+      "language": "typescript",
+      "sizeLines": 506,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/admin/logs/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 71,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/admin/logs/page.tsx",
+      "language": "typescript",
+      "sizeLines": 413,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/admin/users/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 35,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/admin/users/page.tsx",
+      "language": "typescript",
+      "sizeLines": 290,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/api-keys/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 43,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/api-keys/page.tsx",
+      "language": "typescript",
+      "sizeLines": 323,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/config/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 91,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/config/page.tsx",
+      "language": "typescript",
+      "sizeLines": 677,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/connected-accounts/page.tsx",
+      "language": "typescript",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/containers/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 36,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/containers/page.tsx",
+      "language": "typescript",
+      "sizeLines": 340,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/error.tsx",
+      "language": "typescript",
+      "sizeLines": 61,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/layout.tsx",
+      "language": "typescript",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 89,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/logs/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 38,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/logs/page.tsx",
+      "language": "typescript",
+      "sizeLines": 285,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/monitoring/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 71,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/monitoring/page.tsx",
+      "language": "typescript",
+      "sizeLines": 350,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/not-found.tsx",
+      "language": "typescript",
+      "sizeLines": 43,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/page.tsx",
+      "language": "typescript",
+      "sizeLines": 424,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/providers/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 89,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/providers/page.tsx",
+      "language": "typescript",
+      "sizeLines": 293,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/quota/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 106,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/quota/page.test.tsx",
+      "language": "typescript",
+      "sizeLines": 874,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/quota/page.tsx",
+      "language": "typescript",
+      "sizeLines": 661,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/settings/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 88,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/settings/page.tsx",
+      "language": "typescript",
+      "sizeLines": 438,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/setup/page.tsx",
+      "language": "typescript",
+      "sizeLines": 224,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/usage/loading.tsx",
+      "language": "typescript",
+      "sizeLines": 87,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/dashboard/usage/page.tsx",
+      "language": "typescript",
+      "sizeLines": 381,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/global-error.test.tsx",
+      "language": "typescript",
+      "sizeLines": 18,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/global-error.tsx",
+      "language": "typescript",
+      "sizeLines": 82,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/globals.css",
+      "language": "css",
+      "sizeLines": 126,
+      "fileCategory": "markup"
+    },
+    {
+      "path": "dashboard/src/app/layout.tsx",
+      "language": "typescript",
+      "sizeLines": 45,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/login/page.tsx",
+      "language": "typescript",
+      "sizeLines": 154,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/not-found.tsx",
+      "language": "typescript",
+      "sizeLines": 45,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/page.tsx",
+      "language": "typescript",
+      "sizeLines": 5,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/app/setup/page.tsx",
+      "language": "typescript",
+      "sizeLines": 148,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/config-publisher.tsx",
+      "language": "typescript",
+      "sizeLines": 349,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/config-subscriber.tsx",
+      "language": "typescript",
+      "sizeLines": 327,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/config/agent-config-editor.tsx",
+      "language": "typescript",
+      "sizeLines": 339,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/config/config-fields.tsx",
+      "language": "typescript",
+      "sizeLines": 95,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/config/config-preview.tsx",
+      "language": "typescript",
+      "sizeLines": 47,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/connected-accounts/__tests__/connected-accounts-page.test.tsx",
+      "language": "typescript",
+      "sizeLines": 535,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/connected-accounts/__tests__/connected-accounts-table.test.ts",
+      "language": "typescript",
+      "sizeLines": 45,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/connected-accounts/connected-accounts-bulk-bar.tsx",
+      "language": "typescript",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/connected-accounts/connected-accounts-page-logic.ts",
+      "language": "typescript",
+      "sizeLines": 248,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/connected-accounts/connected-accounts-page.tsx",
+      "language": "typescript",
+      "sizeLines": 320,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/connected-accounts/connected-accounts-pagination.tsx",
+      "language": "typescript",
+      "sizeLines": 69,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/connected-accounts/connected-accounts-table.tsx",
+      "language": "typescript",
+      "sizeLines": 131,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/connected-accounts/connected-accounts-toolbar.tsx",
+      "language": "typescript",
+      "sizeLines": 82,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/copy-block.tsx",
+      "language": "typescript",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/custom-provider-modal.tsx",
+      "language": "typescript",
+      "sizeLines": 434,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/custom-providers/basic-fields.tsx",
+      "language": "typescript",
+      "sizeLines": 147,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/custom-providers/excluded-models.tsx",
+      "language": "typescript",
+      "sizeLines": 59,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/custom-providers/group-select.tsx",
+      "language": "typescript",
+      "sizeLines": 46,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/custom-providers/headers-section.tsx",
+      "language": "typescript",
+      "sizeLines": 69,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/custom-providers/model-discovery.tsx",
+      "language": "typescript",
+      "sizeLines": 101,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/custom-providers/model-mappings.tsx",
+      "language": "typescript",
+      "sizeLines": 75,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/dashboard-client-layout.tsx",
+      "language": "typescript",
+      "sizeLines": 33,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/dashboard-header.tsx",
+      "language": "typescript",
+      "sizeLines": 139,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/dashboard-mini-charts.tsx",
+      "language": "typescript",
+      "sizeLines": 169,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/dashboard-nav.tsx",
+      "language": "typescript",
+      "sizeLines": 307,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/dashboard-shell.tsx",
+      "language": "typescript",
+      "sizeLines": 64,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/deploy-dashboard.tsx",
+      "language": "typescript",
+      "sizeLines": 283,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/header/latency-indicator.tsx",
+      "language": "typescript",
+      "sizeLines": 39,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/header/notification-bell.tsx",
+      "language": "typescript",
+      "sizeLines": 217,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/language-switcher.tsx",
+      "language": "typescript",
+      "sizeLines": 57,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/lazy-dashboard-mini-charts.tsx",
+      "language": "typescript",
+      "sizeLines": 12,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/lazy-update-notification.tsx",
+      "language": "typescript",
+      "sizeLines": 12,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/mobile-sidebar-context.tsx",
+      "language": "typescript",
+      "sizeLines": 68,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/mobile-top-bar.tsx",
+      "language": "typescript",
+      "sizeLines": 51,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/model-selector.tsx",
+      "language": "typescript",
+      "sizeLines": 404,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/monitoring/live-logs.tsx",
+      "language": "typescript",
+      "sizeLines": 169,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/monitoring/service-status.tsx",
+      "language": "typescript",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/monitoring/usage-stats.tsx",
+      "language": "typescript",
+      "sizeLines": 149,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode-config-generator.tsx",
+      "language": "typescript",
+      "sizeLines": 762,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode-slim-config-generator.tsx",
+      "language": "typescript",
+      "sizeLines": 370,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode-slim/skills-section.tsx",
+      "language": "typescript",
+      "sizeLines": 94,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode-slim/tier-assignments.tsx",
+      "language": "typescript",
+      "sizeLines": 124,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode-slim/toggle-sections.tsx",
+      "language": "typescript",
+      "sizeLines": 251,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/model-badge.tsx",
+      "language": "typescript",
+      "sizeLines": 387,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/sections/advanced-options-section.tsx",
+      "language": "typescript",
+      "sizeLines": 100,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/sections/background-tasks-section.tsx",
+      "language": "typescript",
+      "sizeLines": 186,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/sections/browser-section.tsx",
+      "language": "typescript",
+      "sizeLines": 63,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/sections/disabled-mcps-section.tsx",
+      "language": "typescript",
+      "sizeLines": 97,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/sections/git-master-section.tsx",
+      "language": "typescript",
+      "sizeLines": 80,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/sections/hooks-section.tsx",
+      "language": "typescript",
+      "sizeLines": 112,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/sections/index.ts",
+      "language": "typescript",
+      "sizeLines": 10,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/sections/lsp-servers-section.tsx",
+      "language": "typescript",
+      "sizeLines": 162,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/sections/sisyphus-section.tsx",
+      "language": "typescript",
+      "sizeLines": 82,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/sections/tmux-section.tsx",
+      "language": "typescript",
+      "sizeLines": 140,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/sections/toggle-list-section.tsx",
+      "language": "typescript",
+      "sizeLines": 77,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/tier-assignments.tsx",
+      "language": "typescript",
+      "sizeLines": 195,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/oh-my-opencode/toggle-sections.tsx",
+      "language": "typescript",
+      "sizeLines": 257,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/opencode-config-generator.tsx",
+      "language": "typescript",
+      "sizeLines": 524,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/opencode/config-preview.tsx",
+      "language": "typescript",
+      "sizeLines": 65,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/opencode/mcp-section.tsx",
+      "language": "typescript",
+      "sizeLines": 257,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/opencode/plugin-section.tsx",
+      "language": "typescript",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/__tests__/oauth-credential-list.test.tsx",
+      "language": "typescript",
+      "sizeLines": 126,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/__tests__/oauth-preview-card.test.ts",
+      "language": "typescript",
+      "sizeLines": 130,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/__tests__/oauth-section.test.tsx",
+      "language": "typescript",
+      "sizeLines": 194,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/api-key-section.tsx",
+      "language": "typescript",
+      "sizeLines": 360,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/custom-provider-section.tsx",
+      "language": "typescript",
+      "sizeLines": 434,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/group-list.tsx",
+      "language": "typescript",
+      "sizeLines": 153,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/oauth-actions.tsx",
+      "language": "typescript",
+      "sizeLines": 66,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/oauth-credential-list.tsx",
+      "language": "typescript",
+      "sizeLines": 192,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/oauth-import-form.tsx",
+      "language": "typescript",
+      "sizeLines": 167,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/oauth-preview-card.tsx",
+      "language": "typescript",
+      "sizeLines": 205,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/oauth-section.tsx",
+      "language": "typescript",
+      "sizeLines": 1096,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/perplexity-pro-section.tsx",
+      "language": "typescript",
+      "sizeLines": 341,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/provider-group-modal.tsx",
+      "language": "typescript",
+      "sizeLines": 177,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/provider-row.tsx",
+      "language": "typescript",
+      "sizeLines": 90,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/providers/ungrouped-list.tsx",
+      "language": "typescript",
+      "sizeLines": 63,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/proxy-update-notification.tsx",
+      "language": "typescript",
+      "sizeLines": 172,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/public-theme-toggle.tsx",
+      "language": "typescript",
+      "sizeLines": 11,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/quick-start-config-section.tsx",
+      "language": "typescript",
+      "sizeLines": 211,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/quota/__tests__/quota-details.test.tsx",
+      "language": "typescript",
+      "sizeLines": 105,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/quota/quota-alerts.tsx",
+      "language": "typescript",
+      "sizeLines": 414,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/quota/quota-chart.tsx",
+      "language": "typescript",
+      "sizeLines": 295,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/quota/quota-details.tsx",
+      "language": "typescript",
+      "sizeLines": 379,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/quota/quota-toolbar.tsx",
+      "language": "typescript",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/settings/password-settings.tsx",
+      "language": "typescript",
+      "sizeLines": 81,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/settings/provider-settings.tsx",
+      "language": "typescript",
+      "sizeLines": 188,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/settings/telegram-settings.tsx",
+      "language": "typescript",
+      "sizeLines": 223,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/setup/reveal-box.tsx",
+      "language": "typescript",
+      "sizeLines": 75,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/setup/step-contents.tsx",
+      "language": "typescript",
+      "sizeLines": 228,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/setup/step-indicator.tsx",
+      "language": "typescript",
+      "sizeLines": 53,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/setup/success-banner.tsx",
+      "language": "typescript",
+      "sizeLines": 46,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/theme-toggle.tsx",
+      "language": "typescript",
+      "sizeLines": 66,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/ui/breadcrumbs.tsx",
+      "language": "typescript",
+      "sizeLines": 73,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/ui/button.tsx",
+      "language": "typescript",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/ui/card.tsx",
+      "language": "typescript",
+      "sizeLines": 50,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/ui/chart-theme.tsx",
+      "language": "typescript",
+      "sizeLines": 167,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/ui/confirm-dialog.tsx",
+      "language": "typescript",
+      "sizeLines": 169,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/ui/input.tsx",
+      "language": "typescript",
+      "sizeLines": 55,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/ui/modal.tsx",
+      "language": "typescript",
+      "sizeLines": 123,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/ui/skeleton.tsx",
+      "language": "typescript",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/ui/toast.tsx",
+      "language": "typescript",
+      "sizeLines": 93,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/ui/tooltip.tsx",
+      "language": "typescript",
+      "sizeLines": 72,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/update-notification.tsx",
+      "language": "typescript",
+      "sizeLines": 177,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/update-overlay.tsx",
+      "language": "typescript",
+      "sizeLines": 288,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/usage/cost-estimation.tsx",
+      "language": "typescript",
+      "sizeLines": 293,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/usage/time-filter.tsx",
+      "language": "typescript",
+      "sizeLines": 88,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/usage/usage-charts.tsx",
+      "language": "typescript",
+      "sizeLines": 274,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/usage/usage-request-events.tsx",
+      "language": "typescript",
+      "sizeLines": 185,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/usage/usage-table.tsx",
+      "language": "typescript",
+      "sizeLines": 157,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/components/user-panel.tsx",
+      "language": "typescript",
+      "sizeLines": 328,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/hooks/__tests__/use-header-notifications.test.ts",
+      "language": "typescript",
+      "sizeLines": 216,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/hooks/__tests__/use-health-status.test.ts",
+      "language": "typescript",
+      "sizeLines": 36,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/hooks/__tests__/use-quota-data.test.ts",
+      "language": "typescript",
+      "sizeLines": 176,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/hooks/notification-utils.ts",
+      "language": "typescript",
+      "sizeLines": 182,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/hooks/use-auth.ts",
+      "language": "typescript",
+      "sizeLines": 39,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/hooks/use-focus-trap.ts",
+      "language": "typescript",
+      "sizeLines": 95,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/hooks/use-header-notifications.ts",
+      "language": "typescript",
+      "sizeLines": 127,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/hooks/use-health-status.ts",
+      "language": "typescript",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/hooks/use-proxy-update-check.ts",
+      "language": "typescript",
+      "sizeLines": 130,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/hooks/use-quota-data.ts",
+      "language": "typescript",
+      "sizeLines": 109,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/hooks/use-theme.ts",
+      "language": "typescript",
+      "sizeLines": 34,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/hooks/use-update-check.ts",
+      "language": "typescript",
+      "sizeLines": 127,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/i18n/config.ts",
+      "language": "typescript",
+      "sizeLines": 8,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/i18n/request.ts",
+      "language": "typescript",
+      "sizeLines": 19,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/instrumentation-node.test.ts",
+      "language": "typescript",
+      "sizeLines": 198,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/instrumentation-node.ts",
+      "language": "typescript",
+      "sizeLines": 152,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/instrumentation.ts",
+      "language": "typescript",
+      "sizeLines": 17,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/async-pool.test.ts",
+      "language": "typescript",
+      "sizeLines": 26,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/available-model-ids.test.ts",
+      "language": "typescript",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/backup-export-provider-credentials.test.ts",
+      "language": "typescript",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/backup-export-settings.test.ts",
+      "language": "typescript",
+      "sizeLines": 41,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/backup-restore-provider-credentials.test.ts",
+      "language": "typescript",
+      "sizeLines": 376,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/backup-restore-settings.test.ts",
+      "language": "typescript",
+      "sizeLines": 112,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/backup-validation.test.ts",
+      "language": "typescript",
+      "sizeLines": 63,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/config-yaml.test.ts",
+      "language": "typescript",
+      "sizeLines": 115,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/entrypoint-migrations.test.ts",
+      "language": "typescript",
+      "sizeLines": 14,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/model-first-monitoring.test.ts",
+      "language": "typescript",
+      "sizeLines": 203,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/notification-dismissal.test.ts",
+      "language": "typescript",
+      "sizeLines": 128,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/oauth-import-ui.test.ts",
+      "language": "typescript",
+      "sizeLines": 28,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/oauth-import-validation.test.ts",
+      "language": "typescript",
+      "sizeLines": 38,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/oh-my-opencode-config.test.ts",
+      "language": "typescript",
+      "sizeLines": 416,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/oh-my-opencode-presets.test.ts",
+      "language": "typescript",
+      "sizeLines": 127,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/quota-window-classification.test.ts",
+      "language": "typescript",
+      "sizeLines": 54,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/slim-config-chains.test.ts",
+      "language": "typescript",
+      "sizeLines": 65,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/slim-fallback-chains-bug.test.ts",
+      "language": "typescript",
+      "sizeLines": 83,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/__tests__/vitest-config.test.ts",
+      "language": "typescript",
+      "sizeLines": 11,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/api-endpoints.ts",
+      "language": "typescript",
+      "sizeLines": 125,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/api-keys/generate.ts",
+      "language": "typescript",
+      "sizeLines": 12,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/api-keys/sync.ts",
+      "language": "typescript",
+      "sizeLines": 141,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/async-pool.ts",
+      "language": "typescript",
+      "sizeLines": 25,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/audit.ts",
+      "language": "typescript",
+      "sizeLines": 85,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/auth/dal.ts",
+      "language": "typescript",
+      "sizeLines": 20,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/auth/jwt.ts",
+      "language": "typescript",
+      "sizeLines": 44,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/auth/origin.test.ts",
+      "language": "typescript",
+      "sizeLines": 64,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/auth/origin.ts",
+      "language": "typescript",
+      "sizeLines": 67,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/auth/password.ts",
+      "language": "typescript",
+      "sizeLines": 15,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/auth/rate-limit.ts",
+      "language": "typescript",
+      "sizeLines": 86,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/auth/session.test.ts",
+      "language": "typescript",
+      "sizeLines": 123,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/auth/session.ts",
+      "language": "typescript",
+      "sizeLines": 96,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/auth/sync-token.ts",
+      "language": "typescript",
+      "sizeLines": 104,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/auth/validation.ts",
+      "language": "typescript",
+      "sizeLines": 12,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/backup/export-provider-credentials.ts",
+      "language": "typescript",
+      "sizeLines": 54,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/backup/export-settings.ts",
+      "language": "typescript",
+      "sizeLines": 51,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/backup/index.ts",
+      "language": "typescript",
+      "sizeLines": 6,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/backup/restore-provider-credentials.ts",
+      "language": "typescript",
+      "sizeLines": 194,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/backup/restore-settings.ts",
+      "language": "typescript",
+      "sizeLines": 82,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/backup/types.ts",
+      "language": "typescript",
+      "sizeLines": 95,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/backup/user-mapping.ts",
+      "language": "typescript",
+      "sizeLines": 23,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/cache.ts",
+      "language": "typescript",
+      "sizeLines": 115,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/config-generators/oh-my-opencode-presets.json",
+      "language": "json",
+      "sizeLines": 166,
+      "fileCategory": "config"
+    },
+    {
+      "path": "dashboard/src/lib/config-generators/oh-my-opencode-presets.ts",
+      "language": "typescript",
+      "sizeLines": 197,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/config-generators/oh-my-opencode-slim-types.ts",
+      "language": "typescript",
+      "sizeLines": 231,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/config-generators/oh-my-opencode-slim.ts",
+      "language": "typescript",
+      "sizeLines": 155,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/config-generators/oh-my-opencode-types.ts",
+      "language": "typescript",
+      "sizeLines": 681,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/config-generators/oh-my-opencode.ts",
+      "language": "typescript",
+      "sizeLines": 480,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/config-generators/opencode.test.ts",
+      "language": "typescript",
+      "sizeLines": 113,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/config-generators/opencode.ts",
+      "language": "typescript",
+      "sizeLines": 414,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/config-generators/shared.ts",
+      "language": "typescript",
+      "sizeLines": 59,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/config-sync/generate-bundle.test.ts",
+      "language": "typescript",
+      "sizeLines": 172,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/config-sync/generate-bundle.ts",
+      "language": "typescript",
+      "sizeLines": 437,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/config-yaml.ts",
+      "language": "typescript",
+      "sizeLines": 47,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/containers.ts",
+      "language": "typescript",
+      "sizeLines": 112,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/db.ts",
+      "language": "typescript",
+      "sizeLines": 21,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/env.ts",
+      "language": "typescript",
+      "sizeLines": 99,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/errors.ts",
+      "language": "typescript",
+      "sizeLines": 336,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/fetch-utils.ts",
+      "language": "typescript",
+      "sizeLines": 102,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/format-relative-time.ts",
+      "language": "typescript",
+      "sizeLines": 51,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/log-storage.ts",
+      "language": "typescript",
+      "sizeLines": 265,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/logger.ts",
+      "language": "typescript",
+      "sizeLines": 65,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/model-first-monitoring.ts",
+      "language": "typescript",
+      "sizeLines": 354,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/model-pricing.ts",
+      "language": "typescript",
+      "sizeLines": 237,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/notification-dismissal.ts",
+      "language": "typescript",
+      "sizeLines": 36,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/oauth-import-ui.ts",
+      "language": "typescript",
+      "sizeLines": 23,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/oauth-import-validation.ts",
+      "language": "typescript",
+      "sizeLines": 59,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/__tests__/management-api.test.ts",
+      "language": "typescript",
+      "sizeLines": 95,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/__tests__/oauth-auto-claim.test.ts",
+      "language": "typescript",
+      "sizeLines": 185,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/__tests__/oauth-listing.test.ts",
+      "language": "typescript",
+      "sizeLines": 556,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/__tests__/oauth-ops.test.ts",
+      "language": "typescript",
+      "sizeLines": 1099,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/__tests__/oauth-ownership-resolver.test.ts",
+      "language": "typescript",
+      "sizeLines": 611,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/__tests__/provider-inference.test.ts",
+      "language": "typescript",
+      "sizeLines": 12,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/api-key-ops.ts",
+      "language": "typescript",
+      "sizeLines": 569,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/auth-files.test.ts",
+      "language": "typescript",
+      "sizeLines": 57,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/auth-files.ts",
+      "language": "typescript",
+      "sizeLines": 63,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/cascade.ts",
+      "language": "typescript",
+      "sizeLines": 102,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/constants.ts",
+      "language": "typescript",
+      "sizeLines": 31,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/custom-provider-sync.test.ts",
+      "language": "typescript",
+      "sizeLines": 145,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/custom-provider-sync.ts",
+      "language": "typescript",
+      "sizeLines": 158,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/dual-write.ts",
+      "language": "typescript",
+      "sizeLines": 43,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/encrypt.ts",
+      "language": "typescript",
+      "sizeLines": 45,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/hash.ts",
+      "language": "typescript",
+      "sizeLines": 37,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/management-api.ts",
+      "language": "typescript",
+      "sizeLines": 220,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/model-grouping.ts",
+      "language": "typescript",
+      "sizeLines": 142,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/oauth-auto-claim.ts",
+      "language": "typescript",
+      "sizeLines": 83,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/oauth-listing.ts",
+      "language": "typescript",
+      "sizeLines": 88,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/oauth-ops.ts",
+      "language": "typescript",
+      "sizeLines": 1048,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/oauth-ownership-resolver.ts",
+      "language": "typescript",
+      "sizeLines": 190,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/perplexity.ts",
+      "language": "typescript",
+      "sizeLines": 3,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/provider-inference.ts",
+      "language": "typescript",
+      "sizeLines": 46,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/resync.ts",
+      "language": "typescript",
+      "sizeLines": 65,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/providers/settings.ts",
+      "language": "typescript",
+      "sizeLines": 27,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/quota-alerts.ts",
+      "language": "typescript",
+      "sizeLines": 252,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/quota-window-classification.ts",
+      "language": "typescript",
+      "sizeLines": 69,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/quota/__tests__/query-state.test.ts",
+      "language": "typescript",
+      "sizeLines": 101,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/quota/provider.ts",
+      "language": "typescript",
+      "sizeLines": 15,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/quota/query-state.ts",
+      "language": "typescript",
+      "sizeLines": 95,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/share-code.ts",
+      "language": "typescript",
+      "sizeLines": 79,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/telegram.ts",
+      "language": "typescript",
+      "sizeLines": 164,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/theme-script.ts",
+      "language": "typescript",
+      "sizeLines": 16,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/theme.ts",
+      "language": "typescript",
+      "sizeLines": 7,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/usage/__tests__/collector.test.ts",
+      "language": "typescript",
+      "sizeLines": 1077,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/usage/collector.ts",
+      "language": "typescript",
+      "sizeLines": 714,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/utils.ts",
+      "language": "typescript",
+      "sizeLines": 21,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/validation/backup.ts",
+      "language": "typescript",
+      "sizeLines": 85,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/lib/validation/schemas.ts",
+      "language": "typescript",
+      "sizeLines": 381,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/scripts/migrate-provider-ownership.test.ts",
+      "language": "typescript",
+      "sizeLines": 48,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/src/scripts/migrate-provider-ownership.ts",
+      "language": "typescript",
+      "sizeLines": 386,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/tests/e2e/admin-backup-restore.spec.ts",
+      "language": "typescript",
+      "sizeLines": 106,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/tests/e2e/global-setup.ts",
+      "language": "typescript",
+      "sizeLines": 40,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/tests/e2e/theme/dark-mode.spec.ts",
+      "language": "typescript",
+      "sizeLines": 7,
+      "fileCategory": "code"
+    },
+    {
+      "path": "dashboard/tsconfig.json",
+      "language": "json",
+      "sizeLines": 34,
+      "fileCategory": "config"
+    },
+    {
+      "path": "dashboard/vitest.config.ts",
+      "language": "typescript",
+      "sizeLines": 22,
+      "fileCategory": "code"
+    },
+    {
+      "path": "docker-compose.local.yml",
+      "language": "yaml",
+      "sizeLines": 172,
+      "fileCategory": "config"
+    },
+    {
+      "path": "docker-compose.yml",
+      "language": "yaml",
+      "sizeLines": 285,
+      "fileCategory": "config"
+    },
+    {
+      "path": "docs/BACKUP.md",
+      "language": "markdown",
+      "sizeLines": 55,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/CODEMAPS/architecture.md",
+      "language": "markdown",
+      "sizeLines": 38,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/CODEMAPS/backend.md",
+      "language": "markdown",
+      "sizeLines": 86,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/CODEMAPS/data.md",
+      "language": "markdown",
+      "sizeLines": 56,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/CODEMAPS/dependencies.md",
+      "language": "markdown",
+      "sizeLines": 38,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/CODEMAPS/frontend.md",
+      "language": "markdown",
+      "sizeLines": 67,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/CONFIGURATION.md",
+      "language": "markdown",
+      "sizeLines": 169,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/CONTRIBUTING.md",
+      "language": "markdown",
+      "sizeLines": 133,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/ENV.md",
+      "language": "markdown",
+      "sizeLines": 27,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/INSTALLATION.md",
+      "language": "markdown",
+      "sizeLines": 350,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/PERFORMANCE-RACE-HARDENING-PLAN.md",
+      "language": "markdown",
+      "sizeLines": 205,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/RUNBOOK.md",
+      "language": "markdown",
+      "sizeLines": 162,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/SECURITY.md",
+      "language": "markdown",
+      "sizeLines": 55,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/SERVICE-MANAGEMENT.md",
+      "language": "markdown",
+      "sizeLines": 96,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-14-backup-restore-and-port-8318.md",
+      "language": "markdown",
+      "sizeLines": 829,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-14-codex-bulk-import.md",
+      "language": "markdown",
+      "sizeLines": 251,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-15-connected-accounts-redesign.md",
+      "language": "markdown",
+      "sizeLines": 985,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-15-dashboard-port-8318-migration.md",
+      "language": "markdown",
+      "sizeLines": 449,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-15-quota-summary-detail-split.md",
+      "language": "markdown",
+      "sizeLines": 365,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-15-usage-collector-internal-scheduler.md",
+      "language": "markdown",
+      "sizeLines": 743,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-16-cliproxyapi-autostart-and-ghcr-release.md",
+      "language": "markdown",
+      "sizeLines": 454,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-16-manual-claim-and-mandatory-oauth-merge.md",
+      "language": "markdown",
+      "sizeLines": 883,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-16-production-compose-root-and-postgres-mode.md",
+      "language": "markdown",
+      "sizeLines": 451,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-16-quota-filters-and-oauth-auto-claim.md",
+      "language": "markdown",
+      "sizeLines": 731,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-17-codex-revoked-quota-sync.md",
+      "language": "markdown",
+      "sizeLines": 753,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-17-security-and-sync-hardening.md",
+      "language": "markdown",
+      "sizeLines": 1392,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-18-follow-up-bug-remediation.md",
+      "language": "markdown",
+      "sizeLines": 597,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-18-release-workflow-split.md",
+      "language": "markdown",
+      "sizeLines": 571,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-19-full-registry-compose-release-install.md",
+      "language": "markdown",
+      "sizeLines": 444,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-04-19-install-sh-docker-cloudflare-tunnel-plan.md",
+      "language": "markdown",
+      "sizeLines": 382,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-14-backup-restore-design.md",
+      "language": "markdown",
+      "sizeLines": 434,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-14-codex-bulk-import-design.md",
+      "language": "markdown",
+      "sizeLines": 57,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-15-connected-accounts-redesign-design.md",
+      "language": "markdown",
+      "sizeLines": 374,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-15-dashboard-port-8318-design.md",
+      "language": "markdown",
+      "sizeLines": 231,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-15-quota-summary-detail-split-design.md",
+      "language": "markdown",
+      "sizeLines": 92,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-15-usage-collector-internal-scheduler-design.md",
+      "language": "markdown",
+      "sizeLines": 264,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-16-cliproxyapi-autostart-and-ghcr-release-design.md",
+      "language": "markdown",
+      "sizeLines": 241,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-16-manual-claim-and-mandatory-oauth-merge-design.md",
+      "language": "markdown",
+      "sizeLines": 312,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-16-production-compose-root-and-postgres-mode-design.md",
+      "language": "markdown",
+      "sizeLines": 277,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-16-quota-filters-and-oauth-auto-claim-design.md",
+      "language": "markdown",
+      "sizeLines": 315,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-17-codex-revoked-quota-sync-design.md",
+      "language": "markdown",
+      "sizeLines": 203,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-17-security-and-sync-hardening-design.md",
+      "language": "markdown",
+      "sizeLines": 383,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-18-release-workflow-split-design.md",
+      "language": "markdown",
+      "sizeLines": 241,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-19-full-registry-compose-release-install-design.md",
+      "language": "markdown",
+      "sizeLines": 282,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-04-19-install-sh-docker-cloudflare-tunnel-design.md",
+      "language": "markdown",
+      "sizeLines": 421,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "docs/TROUBLESHOOTING.md",
+      "language": "markdown",
+      "sizeLines": 164,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "infrastructure/.docker-compose.dashboard-local.yml",
+      "language": "yaml",
+      "sizeLines": 4,
+      "fileCategory": "config"
+    },
+    {
+      "path": "infrastructure/config/Caddyfile",
+      "language": "code",
+      "sizeLines": 76,
+      "fileCategory": "code"
+    },
+    {
+      "path": "infrastructure/config/config.yaml",
+      "language": "yaml",
+      "sizeLines": 286,
+      "fileCategory": "config"
+    },
+    {
+      "path": "infrastructure/deploy.sh",
+      "language": "shell",
+      "sizeLines": 152,
+      "fileCategory": "script"
+    },
+    {
+      "path": "infrastructure/docker-compose.yml",
+      "language": "yaml",
+      "sizeLines": 9,
+      "fileCategory": "config"
+    },
+    {
+      "path": "infrastructure/docs/ufw-setup.md",
+      "language": "markdown",
+      "sizeLines": 284,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "infrastructure/get-log.sh",
+      "language": "shell",
+      "sizeLines": 3,
+      "fileCategory": "script"
+    },
+    {
+      "path": "infrastructure/get-status.sh",
+      "language": "shell",
+      "sizeLines": 3,
+      "fileCategory": "script"
+    },
+    {
+      "path": "infrastructure/scripts/verify-management-auth-url.sh",
+      "language": "shell",
+      "sizeLines": 40,
+      "fileCategory": "script"
+    },
+    {
+      "path": "infrastructure/WEBHOOK_SETUP.md",
+      "language": "markdown",
+      "sizeLines": 98,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "infrastructure/webhook.yaml",
+      "language": "yaml",
+      "sizeLines": 56,
+      "fileCategory": "config"
+    },
+    {
+      "path": "install.sh",
+      "language": "shell",
+      "sizeLines": 1617,
+      "fileCategory": "script"
+    },
+    {
+      "path": "perplexity-sidecar/.dockerignore",
+      "language": "code",
+      "sizeLines": 42,
+      "fileCategory": "code"
+    },
+    {
+      "path": "perplexity-sidecar/app.py",
+      "language": "python",
+      "sizeLines": 558,
+      "fileCategory": "code"
+    },
+    {
+      "path": "perplexity-sidecar/Dockerfile",
+      "language": "dockerfile",
+      "sizeLines": 29,
+      "fileCategory": "infra"
+    },
+    {
+      "path": "perplexity-sidecar/entrypoint.sh",
+      "language": "shell",
+      "sizeLines": 8,
+      "fileCategory": "script"
+    },
+    {
+      "path": "perplexity-sidecar/requirements.txt",
+      "language": "code",
+      "sizeLines": 3,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "README.md",
+      "language": "markdown",
+      "sizeLines": 361,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "rebuild.sh",
+      "language": "shell",
+      "sizeLines": 110,
+      "fileCategory": "script"
+    },
+    {
+      "path": "release-please-config.json",
+      "language": "json",
+      "sizeLines": 13,
+      "fileCategory": "config"
+    },
+    {
+      "path": "scripts/backup.sh",
+      "language": "shell",
+      "sizeLines": 110,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/README.md",
+      "language": "markdown",
+      "sizeLines": 79,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "scripts/restore.sh",
+      "language": "shell",
+      "sizeLines": 134,
+      "fileCategory": "script"
+    },
+    {
+      "path": "scripts/rotate-backups.sh",
+      "language": "shell",
+      "sizeLines": 31,
+      "fileCategory": "script"
+    },
+    {
+      "path": "setup-local.ps1",
+      "language": "code",
+      "sizeLines": 239,
+      "fileCategory": "script"
+    },
+    {
+      "path": "setup-local.sh",
+      "language": "shell",
+      "sizeLines": 320,
+      "fileCategory": "script"
+    },
+    {
+      "path": "version.json",
+      "language": "json",
+      "sizeLines": 6,
+      "fileCategory": "config"
+    }
+  ],
+  "totalFiles": 498,
+  "filteredByIgnore": 0,
+  "estimatedComplexity": "large",
+  "importMap": {
+    ".all-contributorsrc": [],
+    ".env.example": [],
+    ".github/release.yml": [],
+    ".github/workflows/all-contributors.yml": [],
+    ".github/workflows/release-build.yml": [],
+    ".github/workflows/release.yml": [],
+    ".release-please-manifest.json": [],
+    ".reports/codemap-diff.txt": [],
+    "AGENTS.md": [],
+    "dashboard/.dockerignore": [],
+    "dashboard/.env.development": [],
+    "dashboard/CHANGELOG.md": [],
+    "dashboard/config.dev.yaml.example": [],
+    "dashboard/dev-local.ps1": [],
+    "dashboard/dev-local.sh": [],
+    "dashboard/docker-compose.dev.yml": [],
+    "dashboard/Dockerfile": [],
+    "dashboard/entrypoint.sh": [],
+    "dashboard/eslint.config.mjs": [],
+    "dashboard/messages/de.json": [],
+    "dashboard/messages/en.json": [],
+    "dashboard/next.config.ts": [],
+    "dashboard/package.json": [],
+    "dashboard/playwright.config.ts": [],
+    "dashboard/postcss.config.mjs": [],
+    "dashboard/prisma.config.ts": [],
+    "dashboard/prisma/migrations/20250206_add_model_preferences/migration_lock.toml": [],
+    "dashboard/prisma/migrations/20250206_add_model_preferences/migration.sql": [],
+    "dashboard/prisma/migrations/20260206_add_sync_tokens/migration.sql": [],
+    "dashboard/prisma/migrations/20260207_add_config_sharing/migration.sql": [],
+    "dashboard/prisma/migrations/20260207_add_provider_ownership_models/migration.sql": [],
+    "dashboard/prisma/migrations/20260207_add_user_api_keys_and_admin/migration.sql": [],
+    "dashboard/prisma/migrations/20260208_add_custom_providers/migration.sql": [],
+    "dashboard/prisma/migrations/20260208_add_name_to_provider_key_ownership/migration.sql": [],
+    "dashboard/prisma/migrations/20260208_add_provider_key_composite_index/migration.sql": [],
+    "dashboard/prisma/migrations/20260208_add_sync_token_hash_index/migration.sql": [],
+    "dashboard/prisma/migrations/20260209_add_audit_logs/migration.sql": [],
+    "dashboard/prisma/migrations/20260210_add_user_session_version/migration.sql": [],
+    "dashboard/prisma/migrations/20260213000000_add_usage_tracking/migration.sql": [],
+    "dashboard/prisma/migrations/20260216_add_collected_at_index/migration.sql": [],
+    "dashboard/prisma/migrations/20260217_add_audit_target_usage_source_indexes/migration.sql": [],
+    "dashboard/prisma/migrations/20260221_add_perplexity_cookies/migration.sql": [],
+    "dashboard/prisma/migrations/20260225_add_provider_groups/migration.sql": [],
+    "dashboard/prisma/migrations/20260320_add_usage_latency_ms/migration.sql": [],
+    "dashboard/prisma/migrations/20260327_add_slim_overrides/migration.sql": [],
+    "dashboard/prisma/migrations/20260329_add_custom_provider_encrypted_key/migration.sql": [],
+    "dashboard/prisma/migrations/20260412_remove_sync_token_revoked_at/migration.sql": [],
+    "dashboard/prisma/migrations/20260419032000_provider_oauth_account_name_scoped_by_provider/migration.sql": [],
+    "dashboard/prisma/migrations/migration_lock.toml": [],
+    "dashboard/prisma/schema.prisma": [],
+    "dashboard/scripts/prisma-generate.mjs": [],
+    "dashboard/src/app/__e2e__/global-error/page.tsx": [],
+    "dashboard/src/app/api/admin/backup/route.test.ts": [],
+    "dashboard/src/app/api/admin/backup/route.ts": [],
+    "dashboard/src/app/api/admin/deploy/route.ts": [],
+    "dashboard/src/app/api/admin/logs/route.ts": [],
+    "dashboard/src/app/api/admin/migrate-api-keys/route.ts": [],
+    "dashboard/src/app/api/admin/restore/route.test.ts": [],
+    "dashboard/src/app/api/admin/restore/route.ts": [],
+    "dashboard/src/app/api/admin/revoke-sessions/route.ts": [],
+    "dashboard/src/app/api/admin/settings/route.ts": [],
+    "dashboard/src/app/api/admin/telegram/route.ts": [],
+    "dashboard/src/app/api/admin/users/route.test.ts": [],
+    "dashboard/src/app/api/admin/users/route.ts": [],
+    "dashboard/src/app/api/agent-config-slim/route.test.ts": [],
+    "dashboard/src/app/api/agent-config-slim/route.ts": [],
+    "dashboard/src/app/api/agent-config/route.test.ts": [],
+    "dashboard/src/app/api/agent-config/route.ts": [],
+    "dashboard/src/app/api/auth/change-password/route.ts": [],
+    "dashboard/src/app/api/auth/login/route.test.ts": [],
+    "dashboard/src/app/api/auth/login/route.ts": [],
+    "dashboard/src/app/api/auth/logout/route.ts": [],
+    "dashboard/src/app/api/auth/me/route.test.ts": [],
+    "dashboard/src/app/api/auth/me/route.ts": [],
+    "dashboard/src/app/api/config-sharing/publish/route.ts": [],
+    "dashboard/src/app/api/config-sharing/subscribe/route.ts": [],
+    "dashboard/src/app/api/config-sync/bundle/route.ts": [],
+    "dashboard/src/app/api/config-sync/tokens/[id]/route.ts": [],
+    "dashboard/src/app/api/config-sync/tokens/route.test.ts": [],
+    "dashboard/src/app/api/config-sync/tokens/route.ts": [],
+    "dashboard/src/app/api/config-sync/version/route.test.ts": [],
+    "dashboard/src/app/api/config-sync/version/route.ts": [],
+    "dashboard/src/app/api/containers/[name]/action/route.ts": [],
+    "dashboard/src/app/api/containers/[name]/details/route.ts": [],
+    "dashboard/src/app/api/containers/[name]/logs/route.ts": [],
+    "dashboard/src/app/api/containers/list/route.ts": [],
+    "dashboard/src/app/api/custom-providers/[id]/route.test.ts": [],
+    "dashboard/src/app/api/custom-providers/[id]/route.ts": [],
+    "dashboard/src/app/api/custom-providers/fetch-models/route.ts": [],
+    "dashboard/src/app/api/custom-providers/reorder/route.ts": [],
+    "dashboard/src/app/api/custom-providers/resync/route.test.ts": [],
+    "dashboard/src/app/api/custom-providers/resync/route.ts": [],
+    "dashboard/src/app/api/custom-providers/route.ts": [],
+    "dashboard/src/app/api/health/route.ts": [],
+    "dashboard/src/app/api/management/[...path]/route.ts": [],
+    "dashboard/src/app/api/management/oauth-callback/route.test.ts": [],
+    "dashboard/src/app/api/management/oauth-callback/route.ts": [],
+    "dashboard/src/app/api/model-preferences/route.test.ts": [],
+    "dashboard/src/app/api/model-preferences/route.ts": [],
+    "dashboard/src/app/api/oh-my-opencode/presets/route.test.ts": [],
+    "dashboard/src/app/api/oh-my-opencode/presets/route.ts": [],
+    "dashboard/src/app/api/provider-groups/[id]/route.ts": [],
+    "dashboard/src/app/api/provider-groups/reorder/route.ts": [],
+    "dashboard/src/app/api/provider-groups/route.ts": [],
+    "dashboard/src/app/api/providers/keys/[keyHash]/route.ts": [],
+    "dashboard/src/app/api/providers/keys/route.ts": [],
+    "dashboard/src/app/api/providers/oauth/[id]/route.ts": [],
+    "dashboard/src/app/api/providers/oauth/bulk/route.test.ts": [],
+    "dashboard/src/app/api/providers/oauth/bulk/route.ts": [],
+    "dashboard/src/app/api/providers/oauth/claim/route.test.ts": [],
+    "dashboard/src/app/api/providers/oauth/claim/route.ts": [],
+    "dashboard/src/app/api/providers/oauth/import/route.test.ts": [],
+    "dashboard/src/app/api/providers/oauth/import/route.ts": [],
+    "dashboard/src/app/api/providers/oauth/route.test.ts": [],
+    "dashboard/src/app/api/providers/oauth/route.ts": [],
+    "dashboard/src/app/api/providers/perplexity-cookie/current/route.ts": [],
+    "dashboard/src/app/api/providers/perplexity-cookie/route.test.ts": [],
+    "dashboard/src/app/api/providers/perplexity-cookie/route.ts": [],
+    "dashboard/src/app/api/providers/perplexity-cookie/sync-models/route.ts": [],
+    "dashboard/src/app/api/proxy/oauth-settings/route.ts": [],
+    "dashboard/src/app/api/proxy/status/route.ts": [],
+    "dashboard/src/app/api/quota/check-alerts/route.ts": [],
+    "dashboard/src/app/api/quota/route.test.ts": [],
+    "dashboard/src/app/api/quota/route.ts": [],
+    "dashboard/src/app/api/restart/route.ts": [],
+    "dashboard/src/app/api/set-locale/route.test.ts": [],
+    "dashboard/src/app/api/set-locale/route.ts": [],
+    "dashboard/src/app/api/setup-status/route.ts": [],
+    "dashboard/src/app/api/setup/route.test.ts": [],
+    "dashboard/src/app/api/setup/route.ts": [],
+    "dashboard/src/app/api/update/check/route.ts": [],
+    "dashboard/src/app/api/update/dashboard/check/route.ts": [],
+    "dashboard/src/app/api/update/dashboard/route.test.ts": [],
+    "dashboard/src/app/api/update/dashboard/route.ts": [],
+    "dashboard/src/app/api/update/route.test.ts": [],
+    "dashboard/src/app/api/update/route.ts": [],
+    "dashboard/src/app/api/usage/collect/route.test.ts": [],
+    "dashboard/src/app/api/usage/collect/route.ts": [],
+    "dashboard/src/app/api/usage/history/route.ts": [],
+    "dashboard/src/app/api/usage/route.ts": [],
+    "dashboard/src/app/api/user/api-keys/route.ts": [],
+    "dashboard/src/app/api/user/config/route.ts": [],
+    "dashboard/src/app/dashboard/admin/backup/loading.tsx": [],
+    "dashboard/src/app/dashboard/admin/backup/page.tsx": [],
+    "dashboard/src/app/dashboard/admin/logs/loading.tsx": [],
+    "dashboard/src/app/dashboard/admin/logs/page.tsx": [],
+    "dashboard/src/app/dashboard/admin/users/loading.tsx": [],
+    "dashboard/src/app/dashboard/admin/users/page.tsx": [],
+    "dashboard/src/app/dashboard/api-keys/loading.tsx": [],
+    "dashboard/src/app/dashboard/api-keys/page.tsx": [],
+    "dashboard/src/app/dashboard/config/loading.tsx": [],
+    "dashboard/src/app/dashboard/config/page.tsx": [],
+    "dashboard/src/app/dashboard/connected-accounts/page.tsx": [],
+    "dashboard/src/app/dashboard/containers/loading.tsx": [],
+    "dashboard/src/app/dashboard/containers/page.tsx": [],
+    "dashboard/src/app/dashboard/error.tsx": [],
+    "dashboard/src/app/dashboard/layout.tsx": [],
+    "dashboard/src/app/dashboard/loading.tsx": [],
+    "dashboard/src/app/dashboard/logs/loading.tsx": [],
+    "dashboard/src/app/dashboard/logs/page.tsx": [],
+    "dashboard/src/app/dashboard/monitoring/loading.tsx": [],
+    "dashboard/src/app/dashboard/monitoring/page.tsx": [],
+    "dashboard/src/app/dashboard/not-found.tsx": [],
+    "dashboard/src/app/dashboard/page.tsx": [],
+    "dashboard/src/app/dashboard/providers/loading.tsx": [],
+    "dashboard/src/app/dashboard/providers/page.tsx": [],
+    "dashboard/src/app/dashboard/quota/loading.tsx": [],
+    "dashboard/src/app/dashboard/quota/page.test.tsx": [],
+    "dashboard/src/app/dashboard/quota/page.tsx": [],
+    "dashboard/src/app/dashboard/settings/loading.tsx": [],
+    "dashboard/src/app/dashboard/settings/page.tsx": [],
+    "dashboard/src/app/dashboard/setup/page.tsx": [],
+    "dashboard/src/app/dashboard/usage/loading.tsx": [],
+    "dashboard/src/app/dashboard/usage/page.tsx": [],
+    "dashboard/src/app/global-error.test.tsx": [],
+    "dashboard/src/app/global-error.tsx": [],
+    "dashboard/src/app/globals.css": [],
+    "dashboard/src/app/layout.tsx": [],
+    "dashboard/src/app/login/page.tsx": [],
+    "dashboard/src/app/not-found.tsx": [],
+    "dashboard/src/app/page.tsx": [],
+    "dashboard/src/app/setup/page.tsx": [],
+    "dashboard/src/components/config-publisher.tsx": [],
+    "dashboard/src/components/config-subscriber.tsx": [],
+    "dashboard/src/components/config/agent-config-editor.tsx": [],
+    "dashboard/src/components/config/config-fields.tsx": [],
+    "dashboard/src/components/config/config-preview.tsx": [],
+    "dashboard/src/components/connected-accounts/__tests__/connected-accounts-page.test.tsx": [],
+    "dashboard/src/components/connected-accounts/__tests__/connected-accounts-table.test.ts": [],
+    "dashboard/src/components/connected-accounts/connected-accounts-bulk-bar.tsx": [],
+    "dashboard/src/components/connected-accounts/connected-accounts-page-logic.ts": [],
+    "dashboard/src/components/connected-accounts/connected-accounts-page.tsx": [],
+    "dashboard/src/components/connected-accounts/connected-accounts-pagination.tsx": [],
+    "dashboard/src/components/connected-accounts/connected-accounts-table.tsx": [],
+    "dashboard/src/components/connected-accounts/connected-accounts-toolbar.tsx": [],
+    "dashboard/src/components/copy-block.tsx": [],
+    "dashboard/src/components/custom-provider-modal.tsx": [],
+    "dashboard/src/components/custom-providers/basic-fields.tsx": [],
+    "dashboard/src/components/custom-providers/excluded-models.tsx": [],
+    "dashboard/src/components/custom-providers/group-select.tsx": [],
+    "dashboard/src/components/custom-providers/headers-section.tsx": [],
+    "dashboard/src/components/custom-providers/model-discovery.tsx": [],
+    "dashboard/src/components/custom-providers/model-mappings.tsx": [],
+    "dashboard/src/components/dashboard-client-layout.tsx": [],
+    "dashboard/src/components/dashboard-header.tsx": [],
+    "dashboard/src/components/dashboard-mini-charts.tsx": [],
+    "dashboard/src/components/dashboard-nav.tsx": [],
+    "dashboard/src/components/dashboard-shell.tsx": [],
+    "dashboard/src/components/deploy-dashboard.tsx": [],
+    "dashboard/src/components/header/latency-indicator.tsx": [],
+    "dashboard/src/components/header/notification-bell.tsx": [],
+    "dashboard/src/components/language-switcher.tsx": [],
+    "dashboard/src/components/lazy-dashboard-mini-charts.tsx": [],
+    "dashboard/src/components/lazy-update-notification.tsx": [],
+    "dashboard/src/components/mobile-sidebar-context.tsx": [],
+    "dashboard/src/components/mobile-top-bar.tsx": [],
+    "dashboard/src/components/model-selector.tsx": [],
+    "dashboard/src/components/monitoring/live-logs.tsx": [],
+    "dashboard/src/components/monitoring/service-status.tsx": [],
+    "dashboard/src/components/monitoring/usage-stats.tsx": [],
+    "dashboard/src/components/oh-my-opencode-config-generator.tsx": [],
+    "dashboard/src/components/oh-my-opencode-slim-config-generator.tsx": [],
+    "dashboard/src/components/oh-my-opencode-slim/skills-section.tsx": [],
+    "dashboard/src/components/oh-my-opencode-slim/tier-assignments.tsx": [],
+    "dashboard/src/components/oh-my-opencode-slim/toggle-sections.tsx": [],
+    "dashboard/src/components/oh-my-opencode/model-badge.tsx": [],
+    "dashboard/src/components/oh-my-opencode/sections/advanced-options-section.tsx": [],
+    "dashboard/src/components/oh-my-opencode/sections/background-tasks-section.tsx": [],
+    "dashboard/src/components/oh-my-opencode/sections/browser-section.tsx": [],
+    "dashboard/src/components/oh-my-opencode/sections/disabled-mcps-section.tsx": [],
+    "dashboard/src/components/oh-my-opencode/sections/git-master-section.tsx": [],
+    "dashboard/src/components/oh-my-opencode/sections/hooks-section.tsx": [],
+    "dashboard/src/components/oh-my-opencode/sections/index.ts": [],
+    "dashboard/src/components/oh-my-opencode/sections/lsp-servers-section.tsx": [],
+    "dashboard/src/components/oh-my-opencode/sections/sisyphus-section.tsx": [],
+    "dashboard/src/components/oh-my-opencode/sections/tmux-section.tsx": [],
+    "dashboard/src/components/oh-my-opencode/sections/toggle-list-section.tsx": [],
+    "dashboard/src/components/oh-my-opencode/tier-assignments.tsx": [],
+    "dashboard/src/components/oh-my-opencode/toggle-sections.tsx": [],
+    "dashboard/src/components/opencode-config-generator.tsx": [],
+    "dashboard/src/components/opencode/config-preview.tsx": [],
+    "dashboard/src/components/opencode/mcp-section.tsx": [],
+    "dashboard/src/components/opencode/plugin-section.tsx": [],
+    "dashboard/src/components/providers/__tests__/oauth-credential-list.test.tsx": [],
+    "dashboard/src/components/providers/__tests__/oauth-preview-card.test.ts": [],
+    "dashboard/src/components/providers/__tests__/oauth-section.test.tsx": [],
+    "dashboard/src/components/providers/api-key-section.tsx": [],
+    "dashboard/src/components/providers/custom-provider-section.tsx": [],
+    "dashboard/src/components/providers/group-list.tsx": [],
+    "dashboard/src/components/providers/oauth-actions.tsx": [],
+    "dashboard/src/components/providers/oauth-credential-list.tsx": [],
+    "dashboard/src/components/providers/oauth-import-form.tsx": [],
+    "dashboard/src/components/providers/oauth-preview-card.tsx": [],
+    "dashboard/src/components/providers/oauth-section.tsx": [],
+    "dashboard/src/components/providers/perplexity-pro-section.tsx": [],
+    "dashboard/src/components/providers/provider-group-modal.tsx": [],
+    "dashboard/src/components/providers/provider-row.tsx": [],
+    "dashboard/src/components/providers/ungrouped-list.tsx": [],
+    "dashboard/src/components/proxy-update-notification.tsx": [],
+    "dashboard/src/components/public-theme-toggle.tsx": [],
+    "dashboard/src/components/quick-start-config-section.tsx": [],
+    "dashboard/src/components/quota/__tests__/quota-details.test.tsx": [],
+    "dashboard/src/components/quota/quota-alerts.tsx": [],
+    "dashboard/src/components/quota/quota-chart.tsx": [],
+    "dashboard/src/components/quota/quota-details.tsx": [],
+    "dashboard/src/components/quota/quota-toolbar.tsx": [],
+    "dashboard/src/components/settings/password-settings.tsx": [],
+    "dashboard/src/components/settings/provider-settings.tsx": [],
+    "dashboard/src/components/settings/telegram-settings.tsx": [],
+    "dashboard/src/components/setup/reveal-box.tsx": [],
+    "dashboard/src/components/setup/step-contents.tsx": [],
+    "dashboard/src/components/setup/step-indicator.tsx": [],
+    "dashboard/src/components/setup/success-banner.tsx": [],
+    "dashboard/src/components/theme-toggle.tsx": [],
+    "dashboard/src/components/ui/breadcrumbs.tsx": [],
+    "dashboard/src/components/ui/button.tsx": [],
+    "dashboard/src/components/ui/card.tsx": [],
+    "dashboard/src/components/ui/chart-theme.tsx": [],
+    "dashboard/src/components/ui/confirm-dialog.tsx": [],
+    "dashboard/src/components/ui/input.tsx": [],
+    "dashboard/src/components/ui/modal.tsx": [],
+    "dashboard/src/components/ui/skeleton.tsx": [],
+    "dashboard/src/components/ui/toast.tsx": [],
+    "dashboard/src/components/ui/tooltip.tsx": [],
+    "dashboard/src/components/update-notification.tsx": [],
+    "dashboard/src/components/update-overlay.tsx": [],
+    "dashboard/src/components/usage/cost-estimation.tsx": [],
+    "dashboard/src/components/usage/time-filter.tsx": [],
+    "dashboard/src/components/usage/usage-charts.tsx": [],
+    "dashboard/src/components/usage/usage-request-events.tsx": [],
+    "dashboard/src/components/usage/usage-table.tsx": [],
+    "dashboard/src/components/user-panel.tsx": [],
+    "dashboard/src/hooks/__tests__/use-header-notifications.test.ts": [],
+    "dashboard/src/hooks/__tests__/use-health-status.test.ts": [],
+    "dashboard/src/hooks/__tests__/use-quota-data.test.ts": [],
+    "dashboard/src/hooks/notification-utils.ts": [],
+    "dashboard/src/hooks/use-auth.ts": [],
+    "dashboard/src/hooks/use-focus-trap.ts": [],
+    "dashboard/src/hooks/use-header-notifications.ts": [],
+    "dashboard/src/hooks/use-health-status.ts": [],
+    "dashboard/src/hooks/use-proxy-update-check.ts": [],
+    "dashboard/src/hooks/use-quota-data.ts": [],
+    "dashboard/src/hooks/use-theme.ts": [],
+    "dashboard/src/hooks/use-update-check.ts": [],
+    "dashboard/src/i18n/config.ts": [],
+    "dashboard/src/i18n/request.ts": [],
+    "dashboard/src/instrumentation-node.test.ts": [],
+    "dashboard/src/instrumentation-node.ts": [],
+    "dashboard/src/instrumentation.ts": [],
+    "dashboard/src/lib/__tests__/async-pool.test.ts": [],
+    "dashboard/src/lib/__tests__/available-model-ids.test.ts": [],
+    "dashboard/src/lib/__tests__/backup-export-provider-credentials.test.ts": [],
+    "dashboard/src/lib/__tests__/backup-export-settings.test.ts": [],
+    "dashboard/src/lib/__tests__/backup-restore-provider-credentials.test.ts": [],
+    "dashboard/src/lib/__tests__/backup-restore-settings.test.ts": [],
+    "dashboard/src/lib/__tests__/backup-validation.test.ts": [],
+    "dashboard/src/lib/__tests__/config-yaml.test.ts": [],
+    "dashboard/src/lib/__tests__/entrypoint-migrations.test.ts": [],
+    "dashboard/src/lib/__tests__/model-first-monitoring.test.ts": [],
+    "dashboard/src/lib/__tests__/notification-dismissal.test.ts": [],
+    "dashboard/src/lib/__tests__/oauth-import-ui.test.ts": [],
+    "dashboard/src/lib/__tests__/oauth-import-validation.test.ts": [],
+    "dashboard/src/lib/__tests__/oh-my-opencode-config.test.ts": [],
+    "dashboard/src/lib/__tests__/oh-my-opencode-presets.test.ts": [],
+    "dashboard/src/lib/__tests__/quota-window-classification.test.ts": [],
+    "dashboard/src/lib/__tests__/slim-config-chains.test.ts": [],
+    "dashboard/src/lib/__tests__/slim-fallback-chains-bug.test.ts": [],
+    "dashboard/src/lib/__tests__/vitest-config.test.ts": [],
+    "dashboard/src/lib/api-endpoints.ts": [],
+    "dashboard/src/lib/api-keys/generate.ts": [],
+    "dashboard/src/lib/api-keys/sync.ts": [],
+    "dashboard/src/lib/async-pool.ts": [],
+    "dashboard/src/lib/audit.ts": [],
+    "dashboard/src/lib/auth/dal.ts": [],
+    "dashboard/src/lib/auth/jwt.ts": [],
+    "dashboard/src/lib/auth/origin.test.ts": [],
+    "dashboard/src/lib/auth/origin.ts": [],
+    "dashboard/src/lib/auth/password.ts": [],
+    "dashboard/src/lib/auth/rate-limit.ts": [],
+    "dashboard/src/lib/auth/session.test.ts": [],
+    "dashboard/src/lib/auth/session.ts": [],
+    "dashboard/src/lib/auth/sync-token.ts": [],
+    "dashboard/src/lib/auth/validation.ts": [],
+    "dashboard/src/lib/backup/export-provider-credentials.ts": [],
+    "dashboard/src/lib/backup/export-settings.ts": [],
+    "dashboard/src/lib/backup/index.ts": [],
+    "dashboard/src/lib/backup/restore-provider-credentials.ts": [],
+    "dashboard/src/lib/backup/restore-settings.ts": [],
+    "dashboard/src/lib/backup/types.ts": [],
+    "dashboard/src/lib/backup/user-mapping.ts": [],
+    "dashboard/src/lib/cache.ts": [],
+    "dashboard/src/lib/config-generators/oh-my-opencode-presets.json": [],
+    "dashboard/src/lib/config-generators/oh-my-opencode-presets.ts": [],
+    "dashboard/src/lib/config-generators/oh-my-opencode-slim-types.ts": [],
+    "dashboard/src/lib/config-generators/oh-my-opencode-slim.ts": [],
+    "dashboard/src/lib/config-generators/oh-my-opencode-types.ts": [],
+    "dashboard/src/lib/config-generators/oh-my-opencode.ts": [],
+    "dashboard/src/lib/config-generators/opencode.test.ts": [],
+    "dashboard/src/lib/config-generators/opencode.ts": [],
+    "dashboard/src/lib/config-generators/shared.ts": [],
+    "dashboard/src/lib/config-sync/generate-bundle.test.ts": [],
+    "dashboard/src/lib/config-sync/generate-bundle.ts": [],
+    "dashboard/src/lib/config-yaml.ts": [],
+    "dashboard/src/lib/containers.ts": [],
+    "dashboard/src/lib/db.ts": [],
+    "dashboard/src/lib/env.ts": [],
+    "dashboard/src/lib/errors.ts": [],
+    "dashboard/src/lib/fetch-utils.ts": [],
+    "dashboard/src/lib/format-relative-time.ts": [],
+    "dashboard/src/lib/log-storage.ts": [],
+    "dashboard/src/lib/logger.ts": [],
+    "dashboard/src/lib/model-first-monitoring.ts": [],
+    "dashboard/src/lib/model-pricing.ts": [],
+    "dashboard/src/lib/notification-dismissal.ts": [],
+    "dashboard/src/lib/oauth-import-ui.ts": [],
+    "dashboard/src/lib/oauth-import-validation.ts": [],
+    "dashboard/src/lib/providers/__tests__/management-api.test.ts": [],
+    "dashboard/src/lib/providers/__tests__/oauth-auto-claim.test.ts": [],
+    "dashboard/src/lib/providers/__tests__/oauth-listing.test.ts": [],
+    "dashboard/src/lib/providers/__tests__/oauth-ops.test.ts": [],
+    "dashboard/src/lib/providers/__tests__/oauth-ownership-resolver.test.ts": [],
+    "dashboard/src/lib/providers/__tests__/provider-inference.test.ts": [],
+    "dashboard/src/lib/providers/api-key-ops.ts": [],
+    "dashboard/src/lib/providers/auth-files.test.ts": [],
+    "dashboard/src/lib/providers/auth-files.ts": [],
+    "dashboard/src/lib/providers/cascade.ts": [],
+    "dashboard/src/lib/providers/constants.ts": [],
+    "dashboard/src/lib/providers/custom-provider-sync.test.ts": [],
+    "dashboard/src/lib/providers/custom-provider-sync.ts": [],
+    "dashboard/src/lib/providers/dual-write.ts": [],
+    "dashboard/src/lib/providers/encrypt.ts": [],
+    "dashboard/src/lib/providers/hash.ts": [],
+    "dashboard/src/lib/providers/management-api.ts": [],
+    "dashboard/src/lib/providers/model-grouping.ts": [],
+    "dashboard/src/lib/providers/oauth-auto-claim.ts": [],
+    "dashboard/src/lib/providers/oauth-listing.ts": [],
+    "dashboard/src/lib/providers/oauth-ops.ts": [],
+    "dashboard/src/lib/providers/oauth-ownership-resolver.ts": [],
+    "dashboard/src/lib/providers/perplexity.ts": [],
+    "dashboard/src/lib/providers/provider-inference.ts": [],
+    "dashboard/src/lib/providers/resync.ts": [],
+    "dashboard/src/lib/providers/settings.ts": [],
+    "dashboard/src/lib/quota-alerts.ts": [],
+    "dashboard/src/lib/quota-window-classification.ts": [],
+    "dashboard/src/lib/quota/__tests__/query-state.test.ts": [],
+    "dashboard/src/lib/quota/provider.ts": [],
+    "dashboard/src/lib/quota/query-state.ts": [],
+    "dashboard/src/lib/share-code.ts": [],
+    "dashboard/src/lib/telegram.ts": [],
+    "dashboard/src/lib/theme-script.ts": [],
+    "dashboard/src/lib/theme.ts": [],
+    "dashboard/src/lib/usage/__tests__/collector.test.ts": [],
+    "dashboard/src/lib/usage/collector.ts": [],
+    "dashboard/src/lib/utils.ts": [],
+    "dashboard/src/lib/validation/backup.ts": [],
+    "dashboard/src/lib/validation/schemas.ts": [],
+    "dashboard/src/scripts/migrate-provider-ownership.test.ts": [],
+    "dashboard/src/scripts/migrate-provider-ownership.ts": [],
+    "dashboard/tests/e2e/admin-backup-restore.spec.ts": [],
+    "dashboard/tests/e2e/global-setup.ts": [],
+    "dashboard/tests/e2e/theme/dark-mode.spec.ts": [],
+    "dashboard/tsconfig.json": [],
+    "dashboard/vitest.config.ts": [],
+    "docker-compose.local.yml": [],
+    "docker-compose.yml": [],
+    "docs/BACKUP.md": [],
+    "docs/CODEMAPS/architecture.md": [],
+    "docs/CODEMAPS/backend.md": [],
+    "docs/CODEMAPS/data.md": [],
+    "docs/CODEMAPS/dependencies.md": [],
+    "docs/CODEMAPS/frontend.md": [],
+    "docs/CONFIGURATION.md": [],
+    "docs/CONTRIBUTING.md": [],
+    "docs/ENV.md": [],
+    "docs/INSTALLATION.md": [],
+    "docs/PERFORMANCE-RACE-HARDENING-PLAN.md": [],
+    "docs/RUNBOOK.md": [],
+    "docs/SECURITY.md": [],
+    "docs/SERVICE-MANAGEMENT.md": [],
+    "docs/superpowers/plans/2026-04-14-backup-restore-and-port-8318.md": [],
+    "docs/superpowers/plans/2026-04-14-codex-bulk-import.md": [],
+    "docs/superpowers/plans/2026-04-15-connected-accounts-redesign.md": [],
+    "docs/superpowers/plans/2026-04-15-dashboard-port-8318-migration.md": [],
+    "docs/superpowers/plans/2026-04-15-quota-summary-detail-split.md": [],
+    "docs/superpowers/plans/2026-04-15-usage-collector-internal-scheduler.md": [],
+    "docs/superpowers/plans/2026-04-16-cliproxyapi-autostart-and-ghcr-release.md": [],
+    "docs/superpowers/plans/2026-04-16-manual-claim-and-mandatory-oauth-merge.md": [],
+    "docs/superpowers/plans/2026-04-16-production-compose-root-and-postgres-mode.md": [],
+    "docs/superpowers/plans/2026-04-16-quota-filters-and-oauth-auto-claim.md": [],
+    "docs/superpowers/plans/2026-04-17-codex-revoked-quota-sync.md": [],
+    "docs/superpowers/plans/2026-04-17-security-and-sync-hardening.md": [],
+    "docs/superpowers/plans/2026-04-18-follow-up-bug-remediation.md": [],
+    "docs/superpowers/plans/2026-04-18-release-workflow-split.md": [],
+    "docs/superpowers/plans/2026-04-19-full-registry-compose-release-install.md": [],
+    "docs/superpowers/plans/2026-04-19-install-sh-docker-cloudflare-tunnel-plan.md": [],
+    "docs/superpowers/specs/2026-04-14-backup-restore-design.md": [],
+    "docs/superpowers/specs/2026-04-14-codex-bulk-import-design.md": [],
+    "docs/superpowers/specs/2026-04-15-connected-accounts-redesign-design.md": [],
+    "docs/superpowers/specs/2026-04-15-dashboard-port-8318-design.md": [],
+    "docs/superpowers/specs/2026-04-15-quota-summary-detail-split-design.md": [],
+    "docs/superpowers/specs/2026-04-15-usage-collector-internal-scheduler-design.md": [],
+    "docs/superpowers/specs/2026-04-16-cliproxyapi-autostart-and-ghcr-release-design.md": [],
+    "docs/superpowers/specs/2026-04-16-manual-claim-and-mandatory-oauth-merge-design.md": [],
+    "docs/superpowers/specs/2026-04-16-production-compose-root-and-postgres-mode-design.md": [],
+    "docs/superpowers/specs/2026-04-16-quota-filters-and-oauth-auto-claim-design.md": [],
+    "docs/superpowers/specs/2026-04-17-codex-revoked-quota-sync-design.md": [],
+    "docs/superpowers/specs/2026-04-17-security-and-sync-hardening-design.md": [],
+    "docs/superpowers/specs/2026-04-18-release-workflow-split-design.md": [],
+    "docs/superpowers/specs/2026-04-19-full-registry-compose-release-install-design.md": [],
+    "docs/superpowers/specs/2026-04-19-install-sh-docker-cloudflare-tunnel-design.md": [],
+    "docs/TROUBLESHOOTING.md": [],
+    "infrastructure/.docker-compose.dashboard-local.yml": [],
+    "infrastructure/config/Caddyfile": [],
+    "infrastructure/config/config.yaml": [],
+    "infrastructure/deploy.sh": [],
+    "infrastructure/docker-compose.yml": [],
+    "infrastructure/docs/ufw-setup.md": [],
+    "infrastructure/get-log.sh": [],
+    "infrastructure/get-status.sh": [],
+    "infrastructure/scripts/verify-management-auth-url.sh": [],
+    "infrastructure/WEBHOOK_SETUP.md": [],
+    "infrastructure/webhook.yaml": [],
+    "install.sh": [],
+    "perplexity-sidecar/.dockerignore": [],
+    "perplexity-sidecar/app.py": [],
+    "perplexity-sidecar/Dockerfile": [],
+    "perplexity-sidecar/entrypoint.sh": [],
+    "perplexity-sidecar/requirements.txt": [],
+    "README.md": [],
+    "rebuild.sh": [],
+    "release-please-config.json": [],
+    "scripts/backup.sh": [],
+    "scripts/README.md": [],
+    "scripts/restore.sh": [],
+    "scripts/rotate-backups.sh": [],
+    "setup-local.ps1": [],
+    "setup-local.sh": [],
+    "version.json": []
+  }
+}

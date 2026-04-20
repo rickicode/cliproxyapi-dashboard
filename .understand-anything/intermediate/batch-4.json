@@ -1,0 +1,551 @@
+{
+  "nodes": [
+    {
+      "id": "file:dashboard/src/hooks/use-auth.ts",
+      "type": "file",
+      "name": "use-auth.ts",
+      "filePath": "dashboard/src/hooks/use-auth.ts",
+      "summary": "Provides a shared SWR-backed authentication session hook that caches the current user and exposes refresh control to consumers.",
+      "tags": ["hook", "authentication", "state-management", "swr"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/src/hooks/use-auth.ts:useAuth",
+      "type": "function",
+      "name": "useAuth",
+      "filePath": "dashboard/src/hooks/use-auth.ts",
+      "lineRange": [23, 39],
+      "summary": "Fetches the authenticated user from the me endpoint through SWR, returning the current user, loading/error flags, and a refresh mutator.",
+      "tags": ["hook", "authentication", "state-management", "swr"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:dashboard/src/hooks/use-theme.ts",
+      "type": "file",
+      "name": "use-theme.ts",
+      "filePath": "dashboard/src/hooks/use-theme.ts",
+      "summary": "Synchronizes the app theme with the document's data-theme attribute and persists theme toggles to local storage.",
+      "tags": ["hook", "theme", "state-management", "subscription"],
+      "complexity": "simple",
+      "languageNotes": "Uses useSyncExternalStore with a MutationObserver so React stays in sync with DOM-driven theme changes."
+    },
+    {
+      "id": "function:dashboard/src/hooks/use-theme.ts:useTheme",
+      "type": "function",
+      "name": "useTheme",
+      "filePath": "dashboard/src/hooks/use-theme.ts",
+      "lineRange": [23, 34],
+      "summary": "Returns the current light/dark theme and a toggle callback that updates the DOM and local storage together.",
+      "tags": ["hook", "theme", "state-management", "subscription"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:dashboard/src/hooks/use-health-status.ts",
+      "type": "file",
+      "name": "use-health-status.ts",
+      "filePath": "dashboard/src/hooks/use-health-status.ts",
+      "summary": "Polls the health endpoint and exposes a normalized proxy/database health snapshot with latency and raw payload data.",
+      "tags": ["hook", "health-check", "polling", "swr"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/src/hooks/use-health-status.ts:useHealthStatus",
+      "type": "function",
+      "name": "useHealthStatus",
+      "filePath": "dashboard/src/hooks/use-health-status.ts",
+      "lineRange": [26, 44],
+      "summary": "Uses SWR to refresh service health on an interval and returns boolean health, response latency, raw data, and loading/error flags.",
+      "tags": ["hook", "health-check", "polling", "swr"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:dashboard/src/hooks/use-quota-data.ts",
+      "type": "file",
+      "name": "use-quota-data.ts",
+      "filePath": "dashboard/src/hooks/use-quota-data.ts",
+      "summary": "Provides shared quota fetching helpers and hook variants for quota summary and detail views, including cache-busting refresh support.",
+      "tags": ["hook", "quota-monitoring", "data-fetching", "swr"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dashboard/src/hooks/use-quota-data.ts:quotaFetcher",
+      "type": "function",
+      "name": "quotaFetcher",
+      "filePath": "dashboard/src/hooks/use-quota-data.ts",
+      "lineRange": [47, 55],
+      "summary": "Fetches quota JSON and throws a descriptive error when the quota endpoint responds with a failure status.",
+      "tags": ["utility", "data-fetching", "quota-monitoring", "swr"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/src/hooks/use-quota-data.ts:buildBustUrl",
+      "type": "function",
+      "name": "buildBustUrl",
+      "filePath": "dashboard/src/hooks/use-quota-data.ts",
+      "lineRange": [62, 65],
+      "summary": "Adds a timestamp query parameter to a SWR key so callers can force a fresh quota fetch.",
+      "tags": ["utility", "cache-busting", "data-fetching", "swr"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/src/hooks/use-quota-data.ts:useQuotaSummaryData",
+      "type": "function",
+      "name": "useQuotaSummaryData",
+      "filePath": "dashboard/src/hooks/use-quota-data.ts",
+      "lineRange": [99, 101],
+      "summary": "Specializes the shared quota SWR wrapper for the summary endpoint and returns the standard SWR response plus refresh support.",
+      "tags": ["hook", "quota-monitoring", "swr", "summary"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/src/hooks/use-quota-data.ts:useQuotaDetailData",
+      "type": "function",
+      "name": "useQuotaDetailData",
+      "filePath": "dashboard/src/hooks/use-quota-data.ts",
+      "lineRange": [103, 105],
+      "summary": "Specializes the shared quota SWR wrapper for the detailed quota endpoint and exposes the same refresh behavior.",
+      "tags": ["hook", "quota-monitoring", "swr", "detail"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/src/hooks/use-quota-data.ts:useQuotaData",
+      "type": "function",
+      "name": "useQuotaData",
+      "filePath": "dashboard/src/hooks/use-quota-data.ts",
+      "lineRange": [107, 109],
+      "summary": "Backward-compatible alias that returns the detailed quota hook result for existing consumers.",
+      "tags": ["hook", "quota-monitoring", "swr", "alias"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:dashboard/src/hooks/use-header-notifications.ts",
+      "type": "file",
+      "name": "use-header-notifications.ts",
+      "filePath": "dashboard/src/hooks/use-header-notifications.ts",
+      "summary": "Aggregates health, quota, and update state into dismissible header notifications with translation support and per-user persistence.",
+      "tags": ["hook", "notifications", "aggregation", "state-management"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dashboard/src/hooks/use-header-notifications.ts:useHeaderNotifications",
+      "type": "function",
+      "name": "useHeaderNotifications",
+      "filePath": "dashboard/src/hooks/use-header-notifications.ts",
+      "lineRange": [79, 127],
+      "summary": "Builds the visible notification list from live health, quota, and update data, then tracks dismissals in user-scoped storage.",
+      "tags": ["hook", "notifications", "aggregation", "state-management"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:dashboard/src/hooks/use-proxy-update-check.ts",
+      "type": "file",
+      "name": "use-proxy-update-check.ts",
+      "filePath": "dashboard/src/hooks/use-proxy-update-check.ts",
+      "summary": "Checks for CLIProxyAPIPlus proxy updates, controls update prompt visibility, and triggers the proxy update API for admins.",
+      "tags": ["hook", "update-check", "admin-action", "swr"],
+      "complexity": "moderate",
+      "languageNotes": "Persists dismissed update versions in localStorage so the same release is not repeatedly surfaced."
+    },
+    {
+      "id": "function:dashboard/src/hooks/use-proxy-update-check.ts:useProxyUpdateCheck",
+      "type": "function",
+      "name": "useProxyUpdateCheck",
+      "filePath": "dashboard/src/hooks/use-proxy-update-check.ts",
+      "lineRange": [46, 130],
+      "summary": "Polls the proxy update endpoint for admins, manages dismissed-version state, and exposes update/dismiss actions plus status flags.",
+      "tags": ["hook", "update-check", "admin-action", "state-management"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:dashboard/src/hooks/use-update-check.ts",
+      "type": "file",
+      "name": "use-update-check.ts",
+      "filePath": "dashboard/src/hooks/use-update-check.ts",
+      "summary": "Checks for dashboard application updates, controls admin-only prompt state, and posts confirmed update requests to the dashboard API.",
+      "tags": ["hook", "update-check", "admin-action", "swr"],
+      "complexity": "moderate",
+      "languageNotes": "Uses localStorage to suppress duplicate dashboard update prompts until a newer release is detected."
+    },
+    {
+      "id": "function:dashboard/src/hooks/use-update-check.ts:useUpdateCheck",
+      "type": "function",
+      "name": "useUpdateCheck",
+      "filePath": "dashboard/src/hooks/use-update-check.ts",
+      "lineRange": [46, 127],
+      "summary": "Polls the dashboard update endpoint for admins and exposes prompt visibility, loading state, errors, and the update trigger.",
+      "tags": ["hook", "update-check", "admin-action", "state-management"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:dashboard/src/hooks/use-focus-trap.ts",
+      "type": "file",
+      "name": "use-focus-trap.ts",
+      "filePath": "dashboard/src/hooks/use-focus-trap.ts",
+      "summary": "Implements an accessibility focus trap for dialogs and overlays, keeping keyboard focus inside a container while restoring the prior focus on close.",
+      "tags": ["hook", "accessibility", "focus-management", "interaction"],
+      "complexity": "moderate",
+      "languageNotes": "Attaches a document-level keydown listener and restores the previously focused element during cleanup."
+    },
+    {
+      "id": "function:dashboard/src/hooks/use-focus-trap.ts:useFocusTrap",
+      "type": "function",
+      "name": "useFocusTrap",
+      "filePath": "dashboard/src/hooks/use-focus-trap.ts",
+      "lineRange": [16, 95],
+      "summary": "Returns a container ref that traps Tab navigation within the active element and restores focus after the trap unmounts.",
+      "tags": ["hook", "accessibility", "focus-management", "interaction"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:dashboard/src/hooks/notification-utils.ts",
+      "type": "file",
+      "name": "notification-utils.ts",
+      "filePath": "dashboard/src/hooks/notification-utils.ts",
+      "summary": "Defines notification data types and pure helpers that merge health, quota, and update signals into user-facing notification records.",
+      "tags": ["utility", "notifications", "aggregation", "shared-types"],
+      "complexity": "moderate",
+      "languageNotes": "Contains shared notification thresholds and typed data-shaping logic that stays framework-agnostic for easier testing."
+    },
+    {
+      "id": "function:dashboard/src/hooks/notification-utils.ts:buildNotifications",
+      "type": "function",
+      "name": "buildNotifications",
+      "filePath": "dashboard/src/hooks/notification-utils.ts",
+      "lineRange": [73, 182],
+      "summary": "Converts health, quota, and update inputs into ordered notification objects with translated titles, messages, and links.",
+      "tags": ["utility", "notifications", "aggregation", "business-logic"],
+      "complexity": "moderate"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:dashboard/src/hooks/use-auth.ts",
+      "target": "function:dashboard/src/hooks/use-auth.ts:useAuth",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-auth.ts",
+      "target": "function:dashboard/src/hooks/use-auth.ts:useAuth",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-auth.ts",
+      "target": "file:dashboard/src/lib/api-endpoints.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-theme.ts",
+      "target": "function:dashboard/src/hooks/use-theme.ts:useTheme",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-theme.ts",
+      "target": "function:dashboard/src/hooks/use-theme.ts:useTheme",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-theme.ts",
+      "target": "file:dashboard/src/lib/theme.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-health-status.ts",
+      "target": "function:dashboard/src/hooks/use-health-status.ts:useHealthStatus",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-health-status.ts",
+      "target": "function:dashboard/src/hooks/use-health-status.ts:useHealthStatus",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-health-status.ts",
+      "target": "file:dashboard/src/lib/api-endpoints.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-quota-data.ts",
+      "target": "function:dashboard/src/hooks/use-quota-data.ts:quotaFetcher",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-quota-data.ts",
+      "target": "function:dashboard/src/hooks/use-quota-data.ts:buildBustUrl",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-quota-data.ts",
+      "target": "function:dashboard/src/hooks/use-quota-data.ts:useQuotaSummaryData",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-quota-data.ts",
+      "target": "function:dashboard/src/hooks/use-quota-data.ts:useQuotaDetailData",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-quota-data.ts",
+      "target": "function:dashboard/src/hooks/use-quota-data.ts:useQuotaData",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-quota-data.ts",
+      "target": "function:dashboard/src/hooks/use-quota-data.ts:quotaFetcher",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-quota-data.ts",
+      "target": "function:dashboard/src/hooks/use-quota-data.ts:buildBustUrl",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-quota-data.ts",
+      "target": "function:dashboard/src/hooks/use-quota-data.ts:useQuotaSummaryData",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-quota-data.ts",
+      "target": "function:dashboard/src/hooks/use-quota-data.ts:useQuotaDetailData",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-quota-data.ts",
+      "target": "function:dashboard/src/hooks/use-quota-data.ts:useQuotaData",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-quota-data.ts",
+      "target": "file:dashboard/src/lib/api-endpoints.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-quota-data.ts",
+      "target": "file:dashboard/src/lib/model-first-monitoring.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-header-notifications.ts",
+      "target": "function:dashboard/src/hooks/use-header-notifications.ts:useHeaderNotifications",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-header-notifications.ts",
+      "target": "function:dashboard/src/hooks/use-header-notifications.ts:useHeaderNotifications",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-header-notifications.ts",
+      "target": "file:dashboard/src/lib/api-endpoints.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-header-notifications.ts",
+      "target": "file:dashboard/src/hooks/use-health-status.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-header-notifications.ts",
+      "target": "file:dashboard/src/hooks/use-quota-data.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-header-notifications.ts",
+      "target": "file:dashboard/src/hooks/notification-utils.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-header-notifications.ts",
+      "target": "file:dashboard/src/lib/notification-dismissal.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-header-notifications.ts",
+      "target": "function:dashboard/src/hooks/use-health-status.ts:useHealthStatus",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-header-notifications.ts",
+      "target": "function:dashboard/src/hooks/use-quota-data.ts:useQuotaSummaryData",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-header-notifications.ts",
+      "target": "function:dashboard/src/hooks/notification-utils.ts:buildNotifications",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-proxy-update-check.ts",
+      "target": "function:dashboard/src/hooks/use-proxy-update-check.ts:useProxyUpdateCheck",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-proxy-update-check.ts",
+      "target": "function:dashboard/src/hooks/use-proxy-update-check.ts:useProxyUpdateCheck",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-proxy-update-check.ts",
+      "target": "file:dashboard/src/lib/utils.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-proxy-update-check.ts",
+      "target": "file:dashboard/src/lib/api-endpoints.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-proxy-update-check.ts",
+      "target": "file:dashboard/src/hooks/use-auth.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-proxy-update-check.ts",
+      "target": "function:dashboard/src/hooks/use-auth.ts:useAuth",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-update-check.ts",
+      "target": "function:dashboard/src/hooks/use-update-check.ts:useUpdateCheck",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-update-check.ts",
+      "target": "function:dashboard/src/hooks/use-update-check.ts:useUpdateCheck",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-update-check.ts",
+      "target": "file:dashboard/src/lib/utils.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-update-check.ts",
+      "target": "file:dashboard/src/lib/api-endpoints.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-update-check.ts",
+      "target": "file:dashboard/src/hooks/use-auth.ts",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-update-check.ts",
+      "target": "function:dashboard/src/hooks/use-auth.ts:useAuth",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-focus-trap.ts",
+      "target": "function:dashboard/src/hooks/use-focus-trap.ts:useFocusTrap",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/use-focus-trap.ts",
+      "target": "function:dashboard/src/hooks/use-focus-trap.ts:useFocusTrap",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/hooks/notification-utils.ts",
+      "target": "function:dashboard/src/hooks/notification-utils.ts:buildNotifications",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/hooks/notification-utils.ts",
+      "target": "function:dashboard/src/hooks/notification-utils.ts:buildNotifications",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    }
+  ]
+}

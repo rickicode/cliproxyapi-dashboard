@@ -1,0 +1,246 @@
+{
+  "nodes": [
+    {
+      "id": "file:dashboard/src/app/layout.tsx",
+      "type": "file",
+      "name": "layout.tsx",
+      "filePath": "dashboard/src/app/layout.tsx",
+      "summary": "Root App Router layout that loads locale messages, applies Geist fonts, injects the theme bootstrap script, and wraps the application in the Next Intl provider.",
+      "tags": ["app-layout", "internationalization", "theme", "provider", "accessibility"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/src/app/layout.tsx:RootLayout",
+      "type": "function",
+      "name": "RootLayout",
+      "filePath": "dashboard/src/app/layout.tsx",
+      "lineRange": [17, 45],
+      "summary": "Async root layout component that resolves the active locale and messages before rendering the global HTML shell and skip-link wrapper.",
+      "tags": ["layout", "internationalization", "provider", "accessibility"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:dashboard/src/app/page.tsx",
+      "type": "file",
+      "name": "page.tsx",
+      "filePath": "dashboard/src/app/page.tsx",
+      "summary": "Minimal landing route that immediately redirects visitors into the dashboard area.",
+      "tags": ["entry-point", "redirect", "routing"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/src/app/page.tsx:Home",
+      "type": "function",
+      "name": "Home",
+      "filePath": "dashboard/src/app/page.tsx",
+      "lineRange": [3, 5],
+      "summary": "Default landing component that performs a server-side redirect to /dashboard.",
+      "tags": ["redirect", "routing", "entry-point"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:dashboard/src/app/login/page.tsx",
+      "type": "file",
+      "name": "page.tsx",
+      "filePath": "dashboard/src/app/login/page.tsx",
+      "summary": "Client-side authentication screen that checks setup status, submits login credentials, and renders localized loading and error states.",
+      "tags": ["auth", "form", "client-component", "i18n", "routing"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dashboard/src/app/login/page.tsx:LoginPage",
+      "type": "function",
+      "name": "LoginPage",
+      "filePath": "dashboard/src/app/login/page.tsx",
+      "lineRange": [11, 154],
+      "summary": "Interactive login page component with setup gating, credential submission, translated feedback, and a skeleton loading state.",
+      "tags": ["auth", "client-component", "form", "i18n", "state"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:dashboard/src/app/setup/page.tsx",
+      "type": "file",
+      "name": "page.tsx",
+      "filePath": "dashboard/src/app/setup/page.tsx",
+      "summary": "First-run setup screen that creates the initial admin account after validating password confirmation and minimum length.",
+      "tags": ["setup", "auth", "form", "client-component", "i18n"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dashboard/src/app/setup/page.tsx:SetupPage",
+      "type": "function",
+      "name": "SetupPage",
+      "filePath": "dashboard/src/app/setup/page.tsx",
+      "lineRange": [11, 148],
+      "summary": "Interactive setup form that enforces password rules, posts the initial account payload, and redirects into the dashboard on success.",
+      "tags": ["setup", "client-component", "form", "validation", "state"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:dashboard/src/app/global-error.tsx",
+      "type": "file",
+      "name": "global-error.tsx",
+      "filePath": "dashboard/src/app/global-error.tsx",
+      "summary": "Global client error boundary that renders a themed fatal-error screen with reset and dashboard navigation actions.",
+      "tags": ["error-boundary", "fallback-ui", "client-component", "theme", "accessibility"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dashboard/src/app/global-error.tsx:GlobalError",
+      "type": "function",
+      "name": "GlobalError",
+      "filePath": "dashboard/src/app/global-error.tsx",
+      "lineRange": [14, 82],
+      "summary": "Top-level error boundary component that surfaces a recoverable fallback, exposes the error digest when present, and offers reset navigation.",
+      "tags": ["error-boundary", "fallback-ui", "client-component", "accessibility"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:dashboard/src/app/__e2e__/global-error/page.tsx",
+      "type": "file",
+      "name": "page.tsx",
+      "filePath": "dashboard/src/app/__e2e__/global-error/page.tsx",
+      "summary": "Purpose-built E2E fixture that throws immediately so automated tests can verify the global error boundary path.",
+      "tags": ["test-fixture", "error-boundary", "client-component"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/src/app/__e2e__/global-error/page.tsx:E2ECrashPage",
+      "type": "function",
+      "name": "E2ECrashPage",
+      "filePath": "dashboard/src/app/__e2e__/global-error/page.tsx",
+      "lineRange": [3, 5],
+      "summary": "Intentional crash component used only by end-to-end tests to exercise the error boundary rendering flow.",
+      "tags": ["test-fixture", "error-boundary", "client-component"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:dashboard/src/app/globals.css",
+      "type": "file",
+      "name": "globals.css",
+      "filePath": "dashboard/src/app/globals.css",
+      "summary": "Global Tailwind entry stylesheet defining theme tokens, base typography, custom glass utilities, and motion helpers for the dashboard UI.",
+      "tags": ["styling", "theme-system", "tailwind", "animations", "accessibility"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:dashboard/src/app/not-found.tsx",
+      "type": "file",
+      "name": "not-found.tsx",
+      "filePath": "dashboard/src/app/not-found.tsx",
+      "summary": "Localized 404 page that reuses the public theme toggle and offers a direct path back to the dashboard.",
+      "tags": ["error-page", "404", "i18n", "theme", "routing"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/src/app/not-found.tsx:NotFound",
+      "type": "function",
+      "name": "NotFound",
+      "filePath": "dashboard/src/app/not-found.tsx",
+      "lineRange": [5, 45],
+      "summary": "Async not-found component that loads translated copy and renders a branded 404 recovery screen.",
+      "tags": ["error-page", "i18n", "routing", "theme"],
+      "complexity": "simple"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:dashboard/src/app/layout.tsx",
+      "target": "function:dashboard/src/app/layout.tsx:RootLayout",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/app/layout.tsx",
+      "target": "function:dashboard/src/app/layout.tsx:RootLayout",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/app/page.tsx",
+      "target": "function:dashboard/src/app/page.tsx:Home",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/app/page.tsx",
+      "target": "function:dashboard/src/app/page.tsx:Home",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/app/login/page.tsx",
+      "target": "function:dashboard/src/app/login/page.tsx:LoginPage",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/app/login/page.tsx",
+      "target": "function:dashboard/src/app/login/page.tsx:LoginPage",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/app/setup/page.tsx",
+      "target": "function:dashboard/src/app/setup/page.tsx:SetupPage",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/app/setup/page.tsx",
+      "target": "function:dashboard/src/app/setup/page.tsx:SetupPage",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/app/global-error.tsx",
+      "target": "function:dashboard/src/app/global-error.tsx:GlobalError",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/app/global-error.tsx",
+      "target": "function:dashboard/src/app/global-error.tsx:GlobalError",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/app/__e2e__/global-error/page.tsx",
+      "target": "function:dashboard/src/app/__e2e__/global-error/page.tsx:E2ECrashPage",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/app/__e2e__/global-error/page.tsx",
+      "target": "function:dashboard/src/app/__e2e__/global-error/page.tsx:E2ECrashPage",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    },
+    {
+      "source": "file:dashboard/src/app/not-found.tsx",
+      "target": "function:dashboard/src/app/not-found.tsx:NotFound",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 1
+    },
+    {
+      "source": "file:dashboard/src/app/not-found.tsx",
+      "target": "function:dashboard/src/app/not-found.tsx:NotFound",
+      "type": "exports",
+      "direction": "forward",
+      "weight": 0.8
+    }
+  ]
+}
