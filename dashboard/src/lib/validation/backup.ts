@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Prisma } from "@/generated/prisma/client";
-import { BACKUP_SOURCE_APP, BACKUP_TYPE, BACKUP_VERSION } from "@/lib/backup/types";
+import { BACKUP_FORMAT, BACKUP_SOURCE_APP, BACKUP_TYPE, BACKUP_VERSION } from "@/lib/backup/types";
 
 const UsernameReferenceSchema = z.string().min(1).max(255);
 const JsonSchema: z.ZodType<Prisma.JsonValue> = z.lazy(() =>
@@ -42,22 +42,22 @@ export const SettingsBackupPayloadSchema = z.object({
 });
 
 export const ProviderCredentialsBackupPayloadSchema = z.object({
-  providerKeys: z.array(
+  format: z.literal(BACKUP_FORMAT.UNIVERSAL_CREDENTIALS),
+  exportedAt: z.string().datetime(),
+  entries: z.array(
     z.object({
-      username: UsernameReferenceSchema,
+      id: z.string().min(1).max(255),
       provider: z.string().min(1).max(255),
-      keyIdentifier: z.string().min(1).max(255),
+      authType: z.string().min(1).max(255),
       name: z.string().min(1).max(255),
-      keyHash: z.string().regex(/^[a-f0-9]{64}$/i, "keyHash must be a SHA-256 hex string"),
-    })
-  ),
-  providerOAuth: z.array(
-    z.object({
-      username: UsernameReferenceSchema,
-      provider: z.string().min(1).max(255),
-      accountName: z.string().min(1).max(255),
-      accountEmail: z.string().email().nullable(),
-    })
+      priority: z.number().int(),
+      isActive: z.boolean(),
+      accessToken: z.string().min(1),
+      refreshToken: z.string().min(1),
+      idToken: z.string().nullable(),
+      expiresAt: z.string().datetime().nullable(),
+      expiresIn: z.number().int().nullable(),
+    }).passthrough()
   ),
 });
 

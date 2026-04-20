@@ -2,33 +2,93 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import {
   BACKUP_SOURCE_APP,
+  BACKUP_FORMAT,
   BACKUP_TYPE,
   BACKUP_VERSION,
   type ProviderCredentialsBackupEnvelope,
 } from "@/lib/backup/types";
+import { MANAGEMENT_BASE_URL, MANAGEMENT_API_KEY, fetchWithTimeout } from "@/lib/providers/management-api";
+
+class BackupCredentialDownloadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BackupCredentialDownloadError";
+  }
+}
+
+async function fetchOAuthCredentialContent(accountName: string): Promise<Record<string, unknown>> {
+  if (!MANAGEMENT_API_KEY) {
+    throw new BackupCredentialDownloadError("Management API key is not configured");
+  }
+
+  const endpoint = `${MANAGEMENT_BASE_URL}/auth-files/download?name=${encodeURIComponent(accountName)}`;
+  const response = await fetchWithTimeout(endpoint, {
+    headers: { Authorization: `Bearer ${MANAGEMENT_API_KEY}` },
+  });
+
+  if (!response.ok) {
+    throw new BackupCredentialDownloadError(
+      `Failed to download OAuth credential for ${accountName}: HTTP ${response.status}`
+    );
+  }
+
+  const rawContent = await response.text();
+  if (!rawContent.trim()) {
+    throw new BackupCredentialDownloadError(`OAuth credential for ${accountName} is empty`);
+  }
+
+  let parsedContent: unknown;
+  try {
+    parsedContent = JSON.parse(rawContent);
+  } catch {
+    throw new BackupCredentialDownloadError(`OAuth credential for ${accountName} is not valid JSON`);
+  }
+
+  if (!parsedContent || typeof parsedContent !== "object" || Array.isArray(parsedContent)) {
+    throw new BackupCredentialDownloadError(`OAuth credential for ${accountName} must be a JSON object`);
+  }
+
+  return parsedContent as Record<string, unknown>;
+}
 
 export async function exportProviderCredentialsBackup(): Promise<ProviderCredentialsBackupEnvelope> {
-  const [providerKeys, providerOAuth] = await Promise.all([
-    prisma.providerKeyOwnership.findMany({
-      select: {
-        provider: true,
-        keyIdentifier: true,
-        name: true,
-        keyHash: true,
-        user: { select: { username: true } },
-      },
-      orderBy: [{ user: { username: "asc" } }, { provider: "asc" }, { keyIdentifier: "asc" }],
-    }),
-    prisma.providerOAuthOwnership.findMany({
-      select: {
-        provider: true,
-        accountName: true,
-        accountEmail: true,
-        user: { select: { username: true } },
-      },
-      orderBy: [{ user: { username: "asc" } }, { provider: "asc" }, { accountName: "asc" }],
-    }),
-  ]);
+  const providerOAuth = await prisma.providerOAuthOwnership.findMany({
+    select: {
+      provider: true,
+      accountName: true,
+      user: { select: { username: true } },
+    },
+    orderBy: [{ user: { username: "asc" } }, { provider: "asc" }, { accountName: "asc" }],
+  });
+
+  const entries: ProviderCredentialsBackupEnvelope["payload"]["entries"] = [];
+
+  for (const [index, item] of providerOAuth.entries()) {
+    const content = await fetchOAuthCredentialContent(item.accountName);
+
+    const accessToken = typeof content.access_token === "string" ? content.access_token : null;
+    const refreshToken = typeof content.refresh_token === "string" ? content.refresh_token : null;
+
+    if (!accessToken || !refreshToken) {
+      throw new BackupCredentialDownloadError(
+        `OAuth credential for ${item.accountName} is missing access_token or refresh_token`
+      );
+    }
+
+    entries.push({
+      id: `${item.provider}:${item.accountName}:${index + 1}`,
+      provider: item.provider,
+      authType: "oauth",
+      name: item.accountName,
+      priority: index + 1,
+      isActive: true,
+      accessToken,
+      refreshToken,
+      idToken: typeof content.id_token === "string" ? content.id_token : null,
+      expiresAt: typeof content.expires_at === "string" ? content.expires_at : null,
+      expiresIn: typeof content.expires_in === "number" ? content.expires_in : null,
+    });
+  }
 
   return {
     type: BACKUP_TYPE.PROVIDER_CREDENTIALS,
@@ -36,19 +96,9 @@ export async function exportProviderCredentialsBackup(): Promise<ProviderCredent
     exportedAt: new Date().toISOString(),
     sourceApp: BACKUP_SOURCE_APP,
     payload: {
-      providerKeys: providerKeys.map((item) => ({
-        username: item.user.username,
-        provider: item.provider,
-        keyIdentifier: item.keyIdentifier,
-        name: item.name,
-        keyHash: item.keyHash,
-      })),
-      providerOAuth: providerOAuth.map((item) => ({
-        username: item.user.username,
-        provider: item.provider,
-        accountName: item.accountName,
-        accountEmail: item.accountEmail,
-      })),
+      format: BACKUP_FORMAT.UNIVERSAL_CREDENTIALS,
+      exportedAt: new Date().toISOString(),
+      entries,
     },
   };
 }
