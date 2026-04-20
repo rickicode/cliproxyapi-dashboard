@@ -70,7 +70,7 @@ export async function restoreProviderCredentialsBackup(
   let skipped = 0;
   let failed = 0;
 
-  for (const entry of backup.payload.entries) {
+  for (const entry of backup.entries) {
     if (entry.authType !== "oauth") {
       skipped += 1;
       continue;
