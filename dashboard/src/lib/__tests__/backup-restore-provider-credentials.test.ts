@@ -22,27 +22,24 @@ describe("restoreProviderCredentialsBackup", () => {
     const result = await restoreProviderCredentialsBackup({
       type: BACKUP_TYPE.PROVIDER_CREDENTIALS,
       version: BACKUP_VERSION,
+      format: "universal-credentials",
       exportedAt: "2026-04-14T12:00:00.000Z",
       sourceApp: "cliproxyapi-dashboard",
-      payload: {
-        format: "universal-credentials",
-        exportedAt: "2026-04-14T12:00:00.000Z",
-        entries: [
-          {
-            id: "codex:alice@example.com:1",
-            provider: "codex",
-            authType: "oauth",
-            name: "alice@example.com",
-            priority: 1,
-            isActive: true,
-            accessToken: "at",
-            refreshToken: "rt",
-            idToken: null,
-            expiresAt: null,
-            expiresIn: null,
-          },
-        ],
-      },
+      entries: [
+        {
+          id: "codex:alice@example.com:1",
+          provider: "codex",
+          authType: "oauth",
+          name: "alice@example.com",
+          priority: 1,
+          isActive: true,
+          accessToken: "at",
+          refreshToken: "rt",
+          idToken: null,
+          expiresAt: null,
+          expiresIn: null,
+        },
+      ],
     });
 
     expect(fetchWithTimeout).toHaveBeenCalledWith(
@@ -62,27 +59,24 @@ describe("restoreProviderCredentialsBackup", () => {
     const result = await restoreProviderCredentialsBackup({
       type: BACKUP_TYPE.PROVIDER_CREDENTIALS,
       version: BACKUP_VERSION,
+      format: "universal-credentials",
       exportedAt: "2026-04-14T12:00:00.000Z",
       sourceApp: "cliproxyapi-dashboard",
-      payload: {
-        format: "universal-credentials",
-        exportedAt: "2026-04-14T12:00:00.000Z",
-        entries: [
-          {
-            id: "codex:alice@example.com:1",
-            provider: "codex",
-            authType: "oauth",
-            name: "alice@example.com",
-            priority: 1,
-            isActive: true,
-            accessToken: "",
-            refreshToken: "rt",
-            idToken: null,
-            expiresAt: null,
-            expiresIn: null,
-          },
-        ],
-      },
+      entries: [
+        {
+          id: "codex:alice@example.com:1",
+          provider: "codex",
+          authType: "oauth",
+          name: "alice@example.com",
+          priority: 1,
+          isActive: true,
+          accessToken: "",
+          refreshToken: "rt",
+          idToken: null,
+          expiresAt: null,
+          expiresIn: null,
+        },
+      ],
     });
 
     expect(fetchWithTimeout).not.toHaveBeenCalled();
@@ -97,27 +91,24 @@ describe("restoreProviderCredentialsBackup", () => {
     const result = await restoreProviderCredentialsBackup({
       type: BACKUP_TYPE.PROVIDER_CREDENTIALS,
       version: BACKUP_VERSION,
+      format: "universal-credentials",
       exportedAt: "2026-04-14T12:00:00.000Z",
       sourceApp: "cliproxyapi-dashboard",
-      payload: {
-        format: "universal-credentials",
-        exportedAt: "2026-04-14T12:00:00.000Z",
-        entries: [
-          {
-            id: "api-key:1",
-            provider: "openai",
-            authType: "api-key",
-            name: "default",
-            priority: 1,
-            isActive: true,
-            accessToken: null,
-            refreshToken: null,
-            idToken: null,
-            expiresAt: null,
-            expiresIn: null,
-          },
-        ],
-      },
+      entries: [
+        {
+          id: "api-key:1",
+          provider: "openai",
+          authType: "api-key",
+          name: "default",
+          priority: 1,
+          isActive: true,
+          accessToken: null,
+          refreshToken: null,
+          idToken: null,
+          expiresAt: null,
+          expiresIn: null,
+        },
+      ],
     });
 
     expect(fetchWithTimeout).not.toHaveBeenCalled();

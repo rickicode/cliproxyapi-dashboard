@@ -14,6 +14,15 @@ vi.mock("@/lib/providers/management-api", () => ({
   fetchWithTimeout: vi.fn(),
 }));
 
+vi.mock("@/lib/logger", () => ({
+  logger: {
+    warn: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
 describe("exportProviderCredentialsBackup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -39,8 +48,9 @@ describe("exportProviderCredentialsBackup", () => {
     const result = await exportProviderCredentialsBackup();
 
     expect(result.type).toBe(BACKUP_TYPE.PROVIDER_CREDENTIALS);
-    expect(result.payload.format).toBe("universal-credentials");
-    expect(result.payload.entries[0]).toEqual({
+    expect(result.format).toBe("universal-credentials");
+    expect(result.sourceApp).toBe("cliproxyapi-dashboard");
+    expect(result.entries[0]).toEqual({
       id: "claude:bob@example.com:1",
       provider: "claude",
       authType: "oauth",
@@ -73,6 +83,6 @@ describe("exportProviderCredentialsBackup", () => {
     const { exportProviderCredentialsBackup } = await import("@/lib/backup/export-provider-credentials");
 
     const result = await exportProviderCredentialsBackup();
-    expect(result.payload.entries).toHaveLength(0);
+    expect(result.entries).toHaveLength(0);
   });
 });

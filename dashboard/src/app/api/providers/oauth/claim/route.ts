@@ -63,8 +63,7 @@ function isClaimRequest(body: unknown): body is ClaimRequest {
   const obj = body as Record<string, unknown>;
   return typeof obj.accountName === "string"
     && obj.accountName.trim().length > 0
-    && typeof obj.provider === "string"
-    && obj.provider.trim().length > 0;
+    && (typeof obj.provider !== "string" || obj.provider.trim().length > 0);
 }
 
 function isManagementAuthFile(value: unknown): value is ManagementAuthFile {
@@ -170,22 +169,23 @@ export async function POST(request: NextRequest) {
       return Errors.badGateway("Invalid management API response");
     }
 
-    const requestedCanonicalProvider = normalizeOAuthProviderAlias(requestedProvider);
-    if (!requestedCanonicalProvider) {
-      return Errors.validation("Request body must include 'accountName' and 'provider' (string)");
-    }
+    const requestedCanonicalProvider = requestedProvider ? normalizeOAuthProviderAlias(requestedProvider) : null;
 
     const candidateFiles = getData.files.filter(
       (file): file is ManagementAuthFile => isManagementAuthFile(file) && file.name === accountName
     );
 
-    const matchingFile = candidateFiles.find((file) => {
-      if (!hasExplicitCanonicalAuthFileProvider(file)) {
-        return false;
-      }
-
-      return resolveCanonicalAuthFileProvider(file) === requestedCanonicalProvider;
-    }) ?? candidateFiles.find((file) => resolveCanonicalAuthFileProvider(file) === requestedCanonicalProvider);
+    let matchingFile: ManagementAuthFile | undefined;
+    if (requestedCanonicalProvider) {
+      matchingFile = candidateFiles.find((file) => {
+        if (!hasExplicitCanonicalAuthFileProvider(file)) {
+          return false;
+        }
+        return resolveCanonicalAuthFileProvider(file) === requestedCanonicalProvider;
+      }) ?? candidateFiles.find((file) => resolveCanonicalAuthFileProvider(file) === requestedCanonicalProvider);
+    } else {
+      matchingFile = candidateFiles[0];
+    }
 
     if (!matchingFile) {
       return Errors.notFound("Auth file not found in CLIProxyAPIPlus");

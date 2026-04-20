@@ -28,25 +28,22 @@ describe("backup validation", () => {
       version: BACKUP_VERSION,
       exportedAt: "2026-04-14T12:00:00.000Z",
       sourceApp: "cliproxyapi-dashboard",
-      payload: {
-        format: "universal-credentials",
-        exportedAt: "2026-04-14T12:00:00.000Z",
-        entries: [
-          {
-            id: "codex:alice@example.com:1",
-            provider: "codex",
-            authType: "oauth",
-            name: "alice@example.com",
-            priority: 1,
-            isActive: true,
-            accessToken: "at",
-            refreshToken: "rt",
-            idToken: null,
-            expiresAt: null,
-            expiresIn: null,
-          },
-        ],
-      },
+      format: "universal-credentials",
+      entries: [
+        {
+          id: "codex:alice@example.com:1",
+          provider: "codex",
+          authType: "oauth",
+          name: "alice@example.com",
+          priority: 1,
+          isActive: true,
+          accessToken: "at",
+          refreshToken: "rt",
+          idToken: null,
+          expiresAt: null,
+          expiresIn: null,
+        },
+      ],
     });
 
     expect(result.success).toBe(true);
@@ -58,25 +55,22 @@ describe("backup validation", () => {
       version: BACKUP_VERSION,
       exportedAt: "2026-04-14T12:00:00.000Z",
       sourceApp: "cliproxyapi-dashboard",
-      payload: {
-        format: "universal-credentials",
-        exportedAt: "2026-04-14T12:00:00.000Z",
-        entries: [
-          {
-            id: "codex:alice@example.com:1",
-            provider: "codex",
-            authType: "oauth",
-            name: "alice@example.com",
-            priority: 1,
-            isActive: true,
-            accessToken: "",
-            refreshToken: null,
-            idToken: null,
-            expiresAt: null,
-            expiresIn: null,
-          },
-        ],
-      },
+      format: "universal-credentials",
+      entries: [
+        {
+          id: "codex:alice@example.com:1",
+          provider: "codex",
+          authType: "oauth",
+          name: "alice@example.com",
+          priority: 1,
+          isActive: true,
+          accessToken: "",
+          refreshToken: null,
+          idToken: null,
+          expiresAt: null,
+          expiresIn: null,
+        },
+      ],
     });
 
     expect(result.success).toBe(false);
