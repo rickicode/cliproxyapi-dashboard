@@ -62,7 +62,7 @@ export async function exportProviderCredentialsBackup(): Promise<ProviderCredent
     orderBy: [{ user: { username: "asc" } }, { provider: "asc" }, { accountName: "asc" }],
   });
 
-  const entries: ProviderCredentialsBackupEnvelope["payload"]["entries"] = [];
+  const entries: ProviderCredentialsBackupEnvelope["entries"] = [];
 
   for (const [index, item] of providerOAuth.entries()) {
     try {
@@ -104,12 +104,9 @@ export async function exportProviderCredentialsBackup(): Promise<ProviderCredent
   return {
     type: BACKUP_TYPE.PROVIDER_CREDENTIALS,
     version: BACKUP_VERSION,
+    format: BACKUP_FORMAT.UNIVERSAL_CREDENTIALS,
     exportedAt: new Date().toISOString(),
     sourceApp: BACKUP_SOURCE_APP,
-    payload: {
-      format: BACKUP_FORMAT.UNIVERSAL_CREDENTIALS,
-      exportedAt: new Date().toISOString(),
-      entries,
-    },
+    entries,
   };
 }

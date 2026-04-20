@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
             agentModelOverrides: backup.payload.agentModelOverrides.length,
           }
         : {
-            entries: backup.payload.entries.length,
+            entries: backup.entries.length,
           };
 
     logAuditAsync({

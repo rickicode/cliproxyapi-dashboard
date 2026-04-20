@@ -42,8 +42,11 @@ export const SettingsBackupPayloadSchema = z.object({
 });
 
 export const ProviderCredentialsBackupPayloadSchema = z.object({
+  type: z.literal(BACKUP_TYPE.PROVIDER_CREDENTIALS),
+  version: z.literal(BACKUP_VERSION),
   format: z.literal(BACKUP_FORMAT.UNIVERSAL_CREDENTIALS),
   exportedAt: z.string().datetime(),
+  sourceApp: z.string().min(1).max(255).default(BACKUP_SOURCE_APP),
   entries: z.array(
     z.object({
       id: z.string().min(1).max(255),
@@ -72,10 +75,7 @@ export const SettingsBackupEnvelopeSchema = BackupEnvelopeBaseSchema.extend({
   payload: SettingsBackupPayloadSchema,
 });
 
-export const ProviderCredentialsBackupEnvelopeSchema = BackupEnvelopeBaseSchema.extend({
-  type: z.literal(BACKUP_TYPE.PROVIDER_CREDENTIALS),
-  payload: ProviderCredentialsBackupPayloadSchema,
-});
+export const ProviderCredentialsBackupEnvelopeSchema = ProviderCredentialsBackupPayloadSchema;
 
 export const BackupEnvelopeSchema = z.discriminatedUnion("type", [
   SettingsBackupEnvelopeSchema,

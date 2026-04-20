@@ -31,8 +31,11 @@ export interface SettingsBackupPayload {
 }
 
 export interface ProviderCredentialsBackupPayload {
+  type: typeof BACKUP_TYPE.PROVIDER_CREDENTIALS;
+  version: typeof BACKUP_VERSION;
   format: typeof BACKUP_FORMAT.UNIVERSAL_CREDENTIALS;
   exportedAt: string;
+  sourceApp: string;
   entries: Array<UniversalCredentialEntry>;
 }
 
@@ -78,10 +81,7 @@ export type SettingsBackupEnvelope = BackupEnvelope<
   SettingsBackupPayload
 >;
 
-export type ProviderCredentialsBackupEnvelope = BackupEnvelope<
-  typeof BACKUP_TYPE.PROVIDER_CREDENTIALS,
-  ProviderCredentialsBackupPayload
->;
+export type ProviderCredentialsBackupEnvelope = ProviderCredentialsBackupPayload;
 
 export type AnyBackupEnvelope =
   | SettingsBackupEnvelope
