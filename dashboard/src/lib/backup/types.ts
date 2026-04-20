@@ -50,6 +50,19 @@ export interface UniversalCredentialEntry extends Record<string, unknown> {
   expiresIn: number | null;
 }
 
+export interface LegacyBackupInfo {
+  format?: string;
+  exportedAt?: string;
+  entries?: Array<UniversalCredentialEntry>;
+  providerOAuth?: Array<{
+    username: string;
+    provider: string;
+    accountName: string;
+    accountEmail: string | null;
+    credentialContent?: Record<string, unknown>;
+  }>;
+}
+
 export interface BackupEnvelope<TType extends BackupType, TPayload> {
   type: TType;
   version: typeof BACKUP_VERSION;
