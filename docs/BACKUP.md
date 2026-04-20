@@ -12,7 +12,7 @@
 
 - PostgreSQL database dump
 - CLIProxyAPIPlus configuration
-- OAuth token storage
+- OAuth token storage, including full OAuth credential JSON exported as `universal-credentials` entries with `accessToken`, `refreshToken`, `idToken`, `expiresAt`, and `expiresIn`
 - Current runtime config.yaml
 
 ### Storage Location

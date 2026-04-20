@@ -123,6 +123,7 @@ Notes:
 - Each item must include `email`.
 - Each item must include at least one credential field in addition to `email`.
 - The dashboard stores each imported auth file internally as `codex_[email].json`.
+- Backup and restore preserve the full credential JSON, and dashboard exports it in `universal-credentials` format with `accessToken`, `refreshToken`, `idToken`, `expiresAt`, and `expiresIn` fields.
 - Characters unsafe for file names are sanitized internally, but the original `email` remains the user-facing identifier in the import results.
 - Import results are reported per email, so partial success is possible in one bulk upload.
 

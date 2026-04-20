@@ -293,6 +293,8 @@ Periodic usage collection does not require the old installer-managed cron setup.
 
 If you need to onboard many Codex accounts at once, the Dashboard `Providers` page supports bulk JSON import for Codex OAuth credentials. The input format is a JSON array where each item contains an `email` plus the credential payload fields such as `access_token` and `refresh_token`. See [CONFIGURATION.md](./CONFIGURATION.md#codex-bulk-import) for the exact format.
 
+Backup and restore also preserve the full OAuth credential JSON. Dashboard exports OAuth accounts as `universal-credentials` entries so token fields remain available after export/import cycles.
+
 ### 6. Create Systemd Service
 
 The installer writes this unit dynamically so it starts the runtime bundle from `/opt/cliproxyapi` and enables the correct profile set for your selected access mode.
