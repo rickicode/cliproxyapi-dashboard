@@ -22,23 +22,60 @@ describe("backup validation", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects provider credentials backups with invalid key hashes", () => {
+  it("accepts universal credentials provider backups with tokens", () => {
     const result = BackupEnvelopeSchema.safeParse({
       type: BACKUP_TYPE.PROVIDER_CREDENTIALS,
       version: BACKUP_VERSION,
       exportedAt: "2026-04-14T12:00:00.000Z",
       sourceApp: "cliproxyapi-dashboard",
       payload: {
-        providerKeys: [
+        format: "universal-credentials",
+        exportedAt: "2026-04-14T12:00:00.000Z",
+        entries: [
           {
-            username: "alice",
-            provider: "openai",
-            keyIdentifier: "default",
-            name: "Default",
-            keyHash: "not-a-hash",
+            id: "codex:alice@example.com:1",
+            provider: "codex",
+            authType: "oauth",
+            name: "alice@example.com",
+            priority: 1,
+            isActive: true,
+            accessToken: "at",
+            refreshToken: "rt",
+            idToken: null,
+            expiresAt: null,
+            expiresIn: null,
           },
         ],
-        providerOAuth: [],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects universal credentials provider backups without tokens", () => {
+    const result = BackupEnvelopeSchema.safeParse({
+      type: BACKUP_TYPE.PROVIDER_CREDENTIALS,
+      version: BACKUP_VERSION,
+      exportedAt: "2026-04-14T12:00:00.000Z",
+      sourceApp: "cliproxyapi-dashboard",
+      payload: {
+        format: "universal-credentials",
+        exportedAt: "2026-04-14T12:00:00.000Z",
+        entries: [
+          {
+            id: "codex:alice@example.com:1",
+            provider: "codex",
+            authType: "oauth",
+            name: "alice@example.com",
+            priority: 1,
+            isActive: true,
+            accessToken: "",
+            refreshToken: null,
+            idToken: null,
+            expiresAt: null,
+            expiresIn: null,
+          },
+        ],
       },
     });
 
