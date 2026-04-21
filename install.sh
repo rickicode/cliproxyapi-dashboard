@@ -183,12 +183,13 @@ fetch_runtime_bundle() {
 }
 
 validate_runtime_compose_template() {
+    # CLOUDFLARE_TUNNEL_TOKEN is required for cloudflared service validation even though it's profile-gated
     if ! env \
         MANAGEMENT_API_KEY=dummy \
         COLLECTOR_API_KEY=dummy \
         JWT_SECRET=dummy \
         DATABASE_URL=postgresql://user:pass@localhost:5432/db \
-        PROVIDER_ENCRYPTION_KEY=dummy \
+        CLOUDFLARE_TUNNEL_TOKEN=dummy \
         docker compose -f "$RUNTIME_COMPOSE_FILE" config >/dev/null 2>&1; then
         log_error "Fetched runtime compose file is not parseable"
         exit 1
