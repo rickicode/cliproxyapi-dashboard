@@ -1263,8 +1263,11 @@ DASHBOARD_URL=$DASHBOARD_URL
 API_URL=$API_URL
 EOF
 
+    # CLOUDFLARE_TUNNEL_TOKEN is required for compose validation even in non-Cloudflare modes
     if [ "$ACCESS_MODE" = "cloudflare" ]; then
         write_env_assignment "$ENV_FILE" "CLOUDFLARE_TUNNEL_TOKEN" "$CLOUDFLARE_TUNNEL_TOKEN"
+    else
+        write_env_assignment "$ENV_FILE" "CLOUDFLARE_TUNNEL_TOKEN" "unused-non-cloudflare-mode"
     fi
 
     # Perplexity Sidecar (conditional)
